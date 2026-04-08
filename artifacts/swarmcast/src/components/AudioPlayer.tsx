@@ -17,8 +17,11 @@ export function AudioPlayer({ src, autoPlay = false, className, compact = false 
   const audioRef = useRef<HTMLAudioElement>(null);
 
   useEffect(() => {
-    if (autoPlay && audioRef.current) {
+    if (!audioRef.current) return;
+    if (autoPlay) {
       audioRef.current.play().catch(() => null);
+    } else {
+      audioRef.current.pause();
     }
   }, [autoPlay]);
 
@@ -79,7 +82,6 @@ export function AudioPlayer({ src, autoPlay = false, className, compact = false 
         }
       </button>
 
-      {/* Scrubber */}
       <div
         className="flex-1 group relative h-5 flex items-center cursor-pointer"
         onClick={handleSeek}

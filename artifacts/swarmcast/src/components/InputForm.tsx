@@ -3,7 +3,16 @@ import { useCreateAnalysis, useListAnalyses } from "@workspace/api-client-react"
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import { formatDistanceToNow } from "date-fns";
-import { ArrowRight, Loader2 } from "lucide-react";
+import { ArrowRight, Loader2, Sparkles } from "lucide-react";
+
+const EXAMPLE_TITLE = "OpenAI GPT-5 Launch";
+const EXAMPLE_TEXT = `OpenAI has officially announced the launch of GPT-5, describing it as the most capable AI model ever deployed commercially. The model demonstrates PhD-level reasoning across science, mathematics, law, and medicine, outperforming human experts on several established benchmarks.
+
+GPT-5 will be available via API immediately at $0.015 per 1,000 input tokens and $0.06 per 1,000 output tokens. A consumer-facing version arrives in ChatGPT Plus next month. Built-in web search, image analysis, and code execution are included at no extra cost.
+
+CEO Sam Altman stated that GPT-5 represents "a turning point in human civilisation," while critics from the AI safety community warn the model's capabilities significantly outpace existing safety frameworks. Several hundred enterprise contracts have already been signed, including Fortune 500 companies in healthcare, finance, and legal services.
+
+Preliminary studies suggest GPT-5 could automate up to 30% of knowledge work tasks within five years. Labour economists are divided on whether this represents a productivity boom or a structural unemployment risk. Climate researchers note the model's training consumed an estimated 12 gigawatt-hours of electricity.`;
 
 interface InputFormProps {
   onCreateComplete: (id: string) => void;
@@ -20,6 +29,11 @@ const sentimentBar = (val: number | null | undefined) => {
 export function InputForm({ onCreateComplete, onSelectHistory }: InputFormProps) {
   const [title, setTitle] = useState("");
   const [text, setText] = useState("");
+
+  const loadExample = () => {
+    setTitle(EXAMPLE_TITLE);
+    setText(EXAMPLE_TEXT);
+  };
 
   const createAnalysis = useCreateAnalysis();
   const { data: history = [], isLoading: isLoadingHistory } = useListAnalyses();
@@ -111,9 +125,26 @@ export function InputForm({ onCreateComplete, onSelectHistory }: InputFormProps)
               </div>
 
               <div className="space-y-1.5">
-                <label htmlFor="text" className="text-xs font-mono text-muted-foreground uppercase tracking-widest">
-                  Document content
-                </label>
+                <div className="flex items-center justify-between">
+                  <label htmlFor="text" className="text-xs font-mono text-muted-foreground uppercase tracking-widest">
+                    Document content
+                  </label>
+                  <div className="flex items-center gap-3">
+                    <span className="text-[10px] font-mono text-muted-foreground/50">
+                      {text.length > 0 ? `${text.length} chars` : ""}
+                    </span>
+                    {!isPending && (
+                      <button
+                        type="button"
+                        onClick={loadExample}
+                        className="flex items-center gap-1 text-[10px] font-mono text-muted-foreground/60 hover:text-primary transition-colors uppercase tracking-widest"
+                      >
+                        <Sparkles className="w-3 h-3" />
+                        Try example
+                      </button>
+                    )}
+                  </div>
+                </div>
                 <textarea
                   id="text"
                   placeholder="Paste your press release, memo, or announcement text here..."

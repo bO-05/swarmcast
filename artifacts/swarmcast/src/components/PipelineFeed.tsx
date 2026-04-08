@@ -8,14 +8,14 @@ interface PipelineFeedProps {
   analysisId: string;
 }
 
-const steps: Array<{ id: string; label: string; icon: ElementType; detail?: string; showProgress?: boolean }> = [
-  { id: "extracting",         label: "Extracting topics",         detail: "Mistral AI",      icon: FileText },
+const steps: Array<{ id: string; label: string; icon: ElementType; detail?: string; showVoiceProgress?: boolean; showAudioProgress?: boolean }> = [
+  { id: "extracting",         label: "Extracting topics",         detail: "Mistral AI",       icon: FileText },
   { id: "searching",          label: "Web search & fact-check",   detail: "Exa + Perplexity", icon: Search },
-  { id: "generating_personas",label: "Building 25 personas",      detail: "Mistral AI",      icon: Users },
-  { id: "designing_voices",   label: "Designing voices",          detail: "ElevenLabs",      icon: Mic, showProgress: true },
-  { id: "generating_audio",   label: "Recording clips",           detail: "ElevenLabs TTS",  icon: AudioLines, showProgress: true },
-  { id: "building_montage",   label: "Assembling podcast",        detail: "ffmpeg",          icon: Radio },
-  { id: "summarizing",        label: "Generating forecast",       detail: "Mistral AI",      icon: ShieldCheck },
+  { id: "generating_personas",label: "Building personas",          detail: "Mistral AI",       icon: Users },
+  { id: "matching_voices",    label: "Matching voices",           detail: "ElevenLabs library",icon: Mic, showVoiceProgress: true },
+  { id: "generating_audio",   label: "Recording clips",           detail: "ElevenLabs TTS",   icon: AudioLines, showAudioProgress: true },
+  { id: "building_montage",   label: "Assembling podcast",        detail: "ffmpeg",           icon: Radio },
+  { id: "summarizing",        label: "Forecast & summary",        detail: "Mistral AI",       icon: ShieldCheck },
 ];
 
 export function PipelineFeed({ state, analysisId }: PipelineFeedProps) {
@@ -97,22 +97,23 @@ export function PipelineFeed({ state, analysisId }: PipelineFeedProps) {
                     </div>
                   </div>
 
-                  {/* Voice progress */}
-                  {step.showProgress && isActive && step.id === "designing_voices" && (
+                  {/* Voice matching progress */}
+                  {step.showVoiceProgress && isActive && (
                     <div className="mt-2 flex items-center gap-3">
                       <div className="flex-1 h-0.5 bg-border rounded-full overflow-hidden">
                         <div
-                          className="h-full bg-primary transition-all duration-300 ease-out"
-                          style={{ width: `${(state.voicesDesigned / state.voicesTotal) * 100}%` }}
+                          className="h-full bg-primary transition-all duration-150 ease-out"
+                          style={{ width: `${(state.voicesMatched / state.voicesTotal) * 100}%` }}
                         />
                       </div>
                       <span className="text-[10px] font-mono text-muted-foreground w-12 text-right">
-                        {state.voicesDesigned}/{state.voicesTotal}
+                        {state.voicesMatched}/{state.voicesTotal}
                       </span>
                     </div>
                   )}
 
-                  {step.showProgress && isActive && step.id === "generating_audio" && (
+                  {/* Audio recording progress */}
+                  {step.showAudioProgress && isActive && (
                     <div className="mt-2 flex items-center gap-3">
                       <div className="flex-1 h-0.5 bg-border rounded-full overflow-hidden">
                         <div

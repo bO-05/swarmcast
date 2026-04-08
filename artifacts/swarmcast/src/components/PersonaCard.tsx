@@ -1,6 +1,7 @@
 import { Persona } from "@workspace/api-client-react";
 import { AudioPlayer } from "./AudioPlayer";
 import { motion } from "framer-motion";
+import { Share2 } from "lucide-react";
 
 interface PersonaCardProps {
   persona: Persona;
@@ -11,12 +12,24 @@ interface PersonaCardProps {
 }
 
 const typeColors: Record<string, string> = {
-  skeptic:     "text-slate-400   border-slate-500/30   bg-slate-500/8",
-  enthusiast:  "text-sky-400     border-sky-500/30     bg-sky-500/8",
-  critic:      "text-rose-400    border-rose-500/30    bg-rose-500/8",
-  concerned:   "text-amber-400   border-amber-500/30   bg-amber-500/8",
-  influencer:  "text-violet-400  border-violet-500/30  bg-violet-500/8",
-  institutional:"text-teal-400   border-teal-500/30    bg-teal-500/8",
+  skeptic:      "text-slate-400   border-slate-500/30   bg-slate-500/8",
+  enthusiast:   "text-sky-400     border-sky-500/30     bg-sky-500/8",
+  critic:       "text-rose-400    border-rose-500/30    bg-rose-500/8",
+  concerned:    "text-amber-400   border-amber-500/30   bg-amber-500/8",
+  influencer:   "text-violet-400  border-violet-500/30  bg-violet-500/8",
+  institutional:"text-teal-400    border-teal-500/30    bg-teal-500/8",
+  neutral:      "text-zinc-400    border-zinc-500/30    bg-zinc-500/8",
+};
+
+const platformShort: Record<string, string> = {
+  twitter: "X",
+  x: "X",
+  linkedin: "in",
+  reddit: "rd",
+  facebook: "fb",
+  instagram: "ig",
+  tiktok: "tt",
+  youtube: "yt",
 };
 
 function sentimentStyle(value: number) {
@@ -32,6 +45,11 @@ export function PersonaCard({ persona, index, isActive, onPlay, pipelineComplete
   const initial = sentimentStyle(persona.initialSentiment ?? 0);
   const final = sentimentStyle(persona.finalSentiment ?? 0);
   const shifted = (persona.finalSentiment ?? 0) - (persona.initialSentiment ?? 0);
+
+  const platformKey = (persona.platformPreference || "").toLowerCase();
+  const platformLabel = platformShort[platformKey] ?? platformKey.slice(0, 2).toUpperCase();
+
+  const quote = persona.initialReaction || persona.background || "";
 
   return (
     <motion.div
@@ -52,15 +70,25 @@ export function PersonaCard({ persona, index, isActive, onPlay, pipelineComplete
             {[persona.age && `${persona.age}y`, persona.country, persona.mbti].filter(Boolean).join(" · ")}
           </p>
         </div>
-        <span className={`flex-shrink-0 text-[10px] font-medium capitalize px-2 py-0.5 rounded border ${typeClass}`}>
-          {persona.personaType || "Unknown"}
-        </span>
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          {persona.wouldShare && platformLabel && (
+            <span className="flex items-center gap-0.5 text-[9px] font-mono text-muted-foreground/60 bg-muted/30 border border-border/30 rounded px-1 py-0.5">
+              <Share2 className="w-2.5 h-2.5" />
+              {platformLabel}
+            </span>
+          )}
+          <span className={`text-[10px] font-medium capitalize px-2 py-0.5 rounded border ${typeClass}`}>
+            {persona.personaType || "Unknown"}
+          </span>
+        </div>
       </div>
 
-      {/* Quote */}
-      <p className="text-[11px] text-muted-foreground italic line-clamp-2 mb-4 leading-relaxed flex-1">
-        "{persona.background}"
-      </p>
+      {/* Initial reaction quote */}
+      {quote && (
+        <p className="text-[11px] text-muted-foreground italic line-clamp-2 mb-4 leading-relaxed flex-1">
+          "{quote}"
+        </p>
+      )}
 
       {/* Sentiment delta */}
       <div className="flex items-center justify-between mb-3">

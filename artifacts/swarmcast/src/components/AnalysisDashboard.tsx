@@ -8,7 +8,8 @@ import { Gauge } from "./ui/gauge";
 import { motion } from "framer-motion";
 import {
   ShieldCheck, ShieldAlert, AlertTriangle, ExternalLink,
-  TrendingUp, Radio, Search, Users, ChevronDown, ChevronUp
+  TrendingUp, Radio, Users, ChevronDown, ChevronUp,
+  Zap, GitFork, Share2
 } from "lucide-react";
 
 interface AnalysisDashboardProps {
@@ -35,6 +36,7 @@ export function AnalysisDashboard({ analysis, onSelectHistory, autoPlayMontage =
     dominantEmotion,
     riskLevel,
     viralPotential = 0,
+    consensusForming,
     swarmSummary,
     marketQuestion,
     marketProbability,
@@ -42,7 +44,9 @@ export function AnalysisDashboard({ analysis, onSelectHistory, autoPlayMontage =
     exaResults = [],
     montageUrl,
     personas = [],
-    forecastPoints = []
+    forecastPoints = [],
+    keyThemes,
+    narrativeFractures,
   } = analysis;
 
   const viralPct = Math.round((viralPotential ?? 0) * 100);
@@ -65,6 +69,12 @@ export function AnalysisDashboard({ analysis, onSelectHistory, autoPlayMontage =
     avgSentVal > 0.3 ? "Positive" :
     avgSentVal < -0.3 ? "Negative" : "Mixed";
 
+  const sharingPersonas = personas.filter(p => p.wouldShare);
+  const sharingPct = personas.length > 0 ? Math.round((sharingPersonas.length / personas.length) * 100) : 0;
+
+  const themesArr = Array.isArray(keyThemes) ? keyThemes as string[] : [];
+  const fracturesArr = Array.isArray(narrativeFractures) ? narrativeFractures as string[] : [];
+
   return (
     <div className="flex h-[calc(100vh-3.5rem)] overflow-hidden">
 
@@ -75,7 +85,14 @@ export function AnalysisDashboard({ analysis, onSelectHistory, autoPlayMontage =
         <div className="border-b border-border/50 px-6 md:px-10 py-6">
           <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
             <h1 className="font-display text-2xl md:text-3xl text-foreground leading-tight">{title}</h1>
-            <p className="text-xs font-mono text-muted-foreground mt-1">SwarmCast analysis · {personas.length} personas</p>
+            <p className="text-xs font-mono text-muted-foreground mt-1">
+              SwarmCast analysis · {personas.length} personas
+              {consensusForming != null && (
+                <span className={`ml-3 inline-flex items-center gap-1 ${consensusForming ? "text-positive" : "text-amber-400"}`}>
+                  · {consensusForming ? "Consensus forming" : "Polarised swarm"}
+                </span>
+              )}
+            </p>
           </motion.div>
         </div>
 
@@ -95,7 +112,7 @@ export function AnalysisDashboard({ analysis, onSelectHistory, autoPlayMontage =
                   </div>
                   <div className="flex-1">
                     <p className="text-sm text-muted-foreground mb-3">
-                      Synthesized reaction of {personas.filter(p => p.audioUrl).length} voices discussing your announcement.
+                      Synthesised reactions from {personas.filter(p => p.audioUrl).length} unique voices discussing your announcement.
                     </p>
                     <AudioPlayer src={montageUrl} autoPlay={autoPlayMontage} className="w-full max-w-lg" />
                   </div>
@@ -104,12 +121,12 @@ export function AnalysisDashboard({ analysis, onSelectHistory, autoPlayMontage =
             </motion.div>
           )}
 
-          {/* Key metrics — varied weights, not identical cards */}
+          {/* Key metrics — varied weights */}
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.15 }}>
             <Section label="Signal overview">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-0 border border-border/50 rounded-lg overflow-hidden divide-x divide-y md:divide-y-0 divide-border/50">
 
-                {/* Sentiment gauge — larger */}
+                {/* Sentiment gauge */}
                 <div className="col-span-2 md:col-span-1 p-6 flex flex-col items-center gap-3">
                   <Gauge value={avgSentVal} size={90} />
                   <div className="text-center">
@@ -132,21 +149,50 @@ export function AnalysisDashboard({ analysis, onSelectHistory, autoPlayMontage =
                   </div>
                 </div>
 
-                {/* Viral */}
+                {/* Viral potential */}
                 <div className="p-6 flex flex-col justify-between">
                   <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest">Viral potential</p>
                   <div className="mt-4">
-                    <p className="text-3xl font-semibold tabular-nums">{viralPct}<span className="text-lg text-muted-foreground font-normal">%</span></p>
+                    <p className="text-3xl font-semibold tabular-nums">
+                      {viralPct}<span className="text-lg text-muted-foreground font-normal">%</span>
+                    </p>
                     <div className="mt-2 h-0.5 bg-border rounded-full overflow-hidden w-full">
                       <div className="h-full bg-primary" style={{ width: `${viralPct}%` }} />
                     </div>
                   </div>
                 </div>
               </div>
+
+              {/* Secondary metrics row */}
+              <div className="grid grid-cols-3 gap-3 mt-3">
+                <div className="flex items-center gap-3 px-4 py-3 rounded-md border border-border/30 bg-card/20">
+                  <Share2 className="w-4 h-4 text-muted-foreground/50 flex-shrink-0" />
+                  <div>
+                    <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest">Would share</p>
+                    <p className="text-lg font-semibold tabular-nums mt-0.5">{sharingPct}<span className="text-sm text-muted-foreground font-normal">%</span></p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 px-4 py-3 rounded-md border border-border/30 bg-card/20">
+                  <Users className="w-4 h-4 text-muted-foreground/50 flex-shrink-0" />
+                  <div>
+                    <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest">Personas</p>
+                    <p className="text-lg font-semibold tabular-nums mt-0.5">{personas.length}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 px-4 py-3 rounded-md border border-border/30 bg-card/20">
+                  <TrendingUp className="w-4 h-4 text-muted-foreground/50 flex-shrink-0" />
+                  <div>
+                    <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest">Consensus</p>
+                    <p className={`text-sm font-semibold mt-0.5 ${consensusForming ? "text-positive" : "text-amber-400"}`}>
+                      {consensusForming == null ? "—" : consensusForming ? "Forming" : "Divided"}
+                    </p>
+                  </div>
+                </div>
+              </div>
             </Section>
           </motion.div>
 
-          {/* Summary + market — different widths, left-right contrast */}
+          {/* Summary + market */}
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }}>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
               <div className="md:col-span-2 space-y-3">
@@ -160,22 +206,78 @@ export function AnalysisDashboard({ analysis, onSelectHistory, autoPlayMontage =
                   <p className="text-sm font-medium leading-snug">{marketQuestion}</p>
                   <div className="space-y-1.5 mt-4">
                     <div className="flex justify-between text-xs">
-                      <span className="text-muted-foreground">No</span>
+                      <span className="text-positive font-medium">Yes</span>
                       <span className="font-mono font-semibold text-primary">{marketPct}%</span>
                     </div>
-                    <div className="h-1 bg-border rounded-full overflow-hidden">
-                      <div className="h-full bg-primary" style={{ width: `${marketPct}%` }} />
+                    <div className="h-1.5 bg-border rounded-full overflow-hidden">
+                      <div className="h-full bg-primary rounded-full" style={{ width: `${marketPct}%` }} />
                     </div>
-                    <p className="text-[10px] text-muted-foreground">Probability of "Yes"</p>
+                    <div className="flex justify-between text-[10px] text-muted-foreground">
+                      <span>Probability of "Yes"</span>
+                      <span>{100 - marketPct}% No</span>
+                    </div>
                   </div>
                 </div>
               )}
             </div>
           </motion.div>
 
+          {/* Narrative intelligence — key themes + fractures */}
+          {(themesArr.length > 0 || fracturesArr.length > 0) && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.25 }}>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+
+                {themesArr.length > 0 && (
+                  <div className="space-y-4">
+                    <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest flex items-center gap-2">
+                      <Zap className="w-3 h-3" /> Key themes
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {themesArr.map((theme, i) => (
+                        <span
+                          key={i}
+                          className="text-xs px-3 py-1.5 rounded-full border border-primary/30 bg-primary/8 text-foreground/80"
+                        >
+                          {theme}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {fracturesArr.length > 0 && (
+                  <div className="space-y-4">
+                    <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest flex items-center gap-2">
+                      <GitFork className="w-3 h-3" /> Narrative fractures
+                    </p>
+                    <div className="space-y-2">
+                      {fracturesArr.map((fracture, i) => {
+                        const parts = fracture.split(" vs. ");
+                        return (
+                          <div key={i} className="flex items-start gap-2 text-xs text-muted-foreground/80 leading-relaxed">
+                            <span className="flex-shrink-0 mt-0.5 font-mono text-muted-foreground/40">{i + 1}.</span>
+                            {parts.length === 2 ? (
+                              <span>
+                                <span className="text-foreground/70">{parts[0]}</span>
+                                <span className="text-muted-foreground/50"> vs. </span>
+                                <span className="text-foreground/70">{parts[1]}</span>
+                              </span>
+                            ) : (
+                              <span>{fracture}</span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )}
+
           {/* Fact check */}
           {factCheck && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.25 }}>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}>
               <Section label="Reality check">
                 <div className="space-y-3">
                   <div className="flex items-start justify-between gap-4 pb-3 border-b border-border/40">
@@ -206,9 +308,9 @@ export function AnalysisDashboard({ analysis, onSelectHistory, autoPlayMontage =
             </motion.div>
           )}
 
-          {/* Web context — horizontal scroll, no same-size card grid */}
+          {/* Web context */}
           {exaResults && exaResults.length > 0 && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.35 }}>
               <Section label="Web context">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {exaResults.map((result, i) => (
@@ -235,7 +337,7 @@ export function AnalysisDashboard({ analysis, onSelectHistory, autoPlayMontage =
 
           {/* Forecast chart */}
           {forecastPoints && forecastPoints.length > 0 && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.35 }}>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }}>
               <Section label="Sentiment forecast">
                 <div className="border border-border/40 rounded-lg p-4">
                   <SentimentForecastChart points={forecastPoints} />
@@ -244,9 +346,9 @@ export function AnalysisDashboard({ analysis, onSelectHistory, autoPlayMontage =
             </motion.div>
           )}
 
-          {/* Personas */}
+          {/* Personas grid */}
           {personas.length > 0 && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }}>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.45 }}>
               <Section label={`Swarm personas · ${personas.length}`}>
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
                   {displayedPersonas.map((persona, idx) => (

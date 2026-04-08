@@ -11,7 +11,7 @@ export type PipelineStatus =
   | "extracting"
   | "searching"
   | "generating_personas"
-  | "designing_voices"
+  | "matching_voices"
   | "generating_audio"
   | "building_montage"
   | "summarizing"
@@ -21,7 +21,7 @@ export type PipelineStatus =
 export type PipelineState = {
   status: PipelineStatus;
   currentMessage: string;
-  voicesDesigned: number;
+  voicesMatched: number;
   voicesTotal: number;
   audioGenerated: number;
   audioTotal: number;
@@ -33,10 +33,10 @@ function messageToStatus(msg: string): PipelineStatus {
   if (m.includes("extracting")) return "extracting";
   if (m.includes("searching") || m.includes("exa") || m.includes("perplexity")) return "searching";
   if (m.includes("persona")) return "generating_personas";
-  if (m.includes("voice") || m.includes("elevenlabs")) return "designing_voices";
-  if (m.includes("audio") || m.includes("generating audio")) return "generating_audio";
-  if (m.includes("montage") || m.includes("podcast")) return "building_montage";
-  if (m.includes("summar")) return "summarizing";
+  if (m.includes("voice") || m.includes("assigning") || m.includes("elevenlabs")) return "matching_voices";
+  if (m.includes("audio") || m.includes("recording") || m.includes("generating audio")) return "generating_audio";
+  if (m.includes("montage") || m.includes("podcast") || m.includes("assembl")) return "building_montage";
+  if (m.includes("summar") || m.includes("forecast")) return "summarizing";
   return "extracting";
 }
 
@@ -44,7 +44,7 @@ export function useSsePipeline(analysisId: string | null) {
   const [state, setState] = useState<PipelineState>({
     status: "idle",
     currentMessage: "",
-    voicesDesigned: 0,
+    voicesMatched: 0,
     voicesTotal: 25,
     audioGenerated: 0,
     audioTotal: 8,
@@ -55,7 +55,7 @@ export function useSsePipeline(analysisId: string | null) {
       setState({
         status: "idle",
         currentMessage: "",
-        voicesDesigned: 0,
+        voicesMatched: 0,
         voicesTotal: 25,
         audioGenerated: 0,
         audioTotal: 8,
@@ -66,7 +66,7 @@ export function useSsePipeline(analysisId: string | null) {
     setState({
       status: "extracting",
       currentMessage: "Initializing...",
-      voicesDesigned: 0,
+      voicesMatched: 0,
       voicesTotal: 25,
       audioGenerated: 0,
       audioTotal: 8,
@@ -102,15 +102,15 @@ export function useSsePipeline(analysisId: string | null) {
           case "personas_done":
             setState((prev) => ({
               ...prev,
-              currentMessage: "25 personas generated",
+              currentMessage: "Personas generated",
             }));
             break;
           case "voice_progress":
             setState((prev) => ({
               ...prev,
-              status: "designing_voices",
-              voicesDesigned: prev.voicesDesigned + 1,
-              currentMessage: `Voice ${prev.voicesDesigned + 1}/${prev.voicesTotal} designed`,
+              status: "matching_voices",
+              voicesMatched: prev.voicesMatched + 1,
+              currentMessage: `Matched ${prev.voicesMatched + 1}/${prev.voicesTotal} voices`,
             }));
             break;
           case "audio_progress":
@@ -118,7 +118,7 @@ export function useSsePipeline(analysisId: string | null) {
               ...prev,
               status: "generating_audio",
               audioGenerated: prev.audioGenerated + 1,
-              currentMessage: `Audio ${prev.audioGenerated + 1}/${prev.audioTotal} generated`,
+              currentMessage: `Audio ${prev.audioGenerated + 1}/${prev.audioTotal} recorded`,
             }));
             break;
           case "montage_done":

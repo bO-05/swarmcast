@@ -63,7 +63,14 @@ export function useSsePipeline(analysisId: string | null) {
       return;
     }
 
-    setState((prev) => ({ ...prev, status: "extracting", currentMessage: "Initializing..." }));
+    setState({
+      status: "extracting",
+      currentMessage: "Initializing...",
+      voicesDesigned: 0,
+      voicesTotal: 25,
+      audioGenerated: 0,
+      audioTotal: 8,
+    });
 
     const es = new EventSource(`/api/analyses/${analysisId}/stream`);
 

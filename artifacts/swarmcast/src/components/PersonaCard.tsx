@@ -11,9 +11,10 @@ interface PersonaCardProps {
   index: number;
   isActive?: boolean;
   onPlay?: () => void;
+  pipelineComplete?: boolean;
 }
 
-export function PersonaCard({ persona, index, isActive, onPlay }: PersonaCardProps) {
+export function PersonaCard({ persona, index, isActive, onPlay, pipelineComplete }: PersonaCardProps) {
   const getTypeColor = (type?: string | null) => {
     if (!type) return "bg-slate-500/10 text-slate-400";
     switch (type.toLowerCase()) {
@@ -89,6 +90,10 @@ export function PersonaCard({ persona, index, isActive, onPlay }: PersonaCardPro
           {persona.audioUrl ? (
             <div onClick={onPlay}>
               <AudioPlayer src={persona.audioUrl} autoPlay={isActive} className="mt-auto bg-background/50 h-10 w-full" />
+            </div>
+          ) : pipelineComplete ? (
+            <div className="mt-auto h-10 bg-background/30 rounded-full flex items-center justify-center text-xs text-muted-foreground/50 border border-border/20">
+              No audio clip
             </div>
           ) : (
             <div className="mt-auto h-10 bg-background/30 rounded-full flex items-center justify-center text-xs text-muted-foreground border border-border/30">

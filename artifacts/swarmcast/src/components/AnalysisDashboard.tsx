@@ -256,6 +256,7 @@ export function AnalysisDashboard({ analysis, onSelectHistory, autoPlayMontage =
                 index={idx} 
                 isActive={activeAudioId === persona.id}
                 onPlay={() => setActiveAudioId(persona.id)}
+                pipelineComplete={true}
               />
             ))}
           </div>

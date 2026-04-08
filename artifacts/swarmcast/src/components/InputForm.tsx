@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import { useCreateAnalysis, useListAnalyses } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { formatDistanceToNow } from "date-fns";
-import { ArrowRight, Loader2, Sparkles } from "lucide-react";
+import { ArrowRight, Loader2, Sparkles, Link2, FileText, AlignLeft, UploadCloud, X, AlertCircle } from "lucide-react";
 
 const EXAMPLE_TITLE = "OpenAI GPT-5 Launch";
 const EXAMPLE_TEXT = `OpenAI has officially announced the launch of GPT-5, describing it as the most capable AI model ever deployed commercially. The model demonstrates PhD-level reasoning across science, mathematics, law, and medicine, outperforming human experts on several established benchmarks.
@@ -13,6 +13,8 @@ GPT-5 will be available via API immediately at $0.015 per 1,000 input tokens and
 CEO Sam Altman stated that GPT-5 represents "a turning point in human civilisation," while critics from the AI safety community warn the model's capabilities significantly outpace existing safety frameworks. Several hundred enterprise contracts have already been signed, including Fortune 500 companies in healthcare, finance, and legal services.
 
 Preliminary studies suggest GPT-5 could automate up to 30% of knowledge work tasks within five years. Labour economists are divided on whether this represents a productivity boom or a structural unemployment risk. Climate researchers note the model's training consumed an estimated 12 gigawatt-hours of electricity.`;
+
+type InputMode = "text" | "url" | "file";
 
 interface InputFormProps {
   onCreateComplete: (id: string) => void;
@@ -26,17 +28,120 @@ const sentimentBar = (val: number | null | undefined) => {
   return { pct, color };
 };
 
+async function extractPdfText(file: File): Promise<string> {
+  const pdfjsLib = await import("pdfjs-dist");
+  pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+    "pdfjs-dist/build/pdf.worker.min.mjs",
+    import.meta.url
+  ).href;
+
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  const pages: string[] = [];
+
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    const pageText = content.items.map((item) => ("str" in item ? item.str : "")).join(" ");
+    pages.push(pageText);
+  }
+
+  return pages.join("\n\n");
+}
+
 export function InputForm({ onCreateComplete, onSelectHistory }: InputFormProps) {
+  const [mode, setMode] = useState<InputMode>("text");
   const [title, setTitle] = useState("");
   const [text, setText] = useState("");
 
-  const loadExample = () => {
-    setTitle(EXAMPLE_TITLE);
-    setText(EXAMPLE_TEXT);
-  };
+  // URL mode state
+  const [urlInput, setUrlInput] = useState("");
+  const [isFetchingUrl, setIsFetchingUrl] = useState(false);
+  const [urlError, setUrlError] = useState<string | null>(null);
+  const [urlFetched, setUrlFetched] = useState(false);
+
+  // File mode state
+  const [isDragging, setIsDragging] = useState(false);
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [isParsingFile, setIsParsingFile] = useState(false);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const createAnalysis = useCreateAnalysis();
   const { data: history = [], isLoading: isLoadingHistory } = useListAnalyses();
+
+  const loadExample = () => {
+    setMode("text");
+    setTitle(EXAMPLE_TITLE);
+    setText(EXAMPLE_TEXT);
+    setUrlFetched(false);
+    setFileName(null);
+  };
+
+  const handleFetchUrl = async () => {
+    const trimmed = urlInput.trim();
+    if (!trimmed) return;
+    setIsFetchingUrl(true);
+    setUrlError(null);
+    setUrlFetched(false);
+    try {
+      const res = await fetch("/api/fetch-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: trimmed }),
+      });
+      const data = await res.json() as { title?: string; text?: string; error?: string };
+      if (!res.ok) throw new Error(data.error || "Failed to fetch URL");
+      if (data.title && !title) setTitle(data.title);
+      setText(data.text ?? "");
+      setUrlFetched(true);
+    } catch (err) {
+      setUrlError(err instanceof Error ? err.message : "Could not fetch URL");
+    } finally {
+      setIsFetchingUrl(false);
+    }
+  };
+
+  const processFile = useCallback(async (file: File) => {
+    setFileError(null);
+    setFileName(file.name);
+    setIsParsingFile(true);
+    try {
+      let extracted = "";
+      if (file.type === "application/pdf" || file.name.endsWith(".pdf")) {
+        extracted = await extractPdfText(file);
+      } else {
+        extracted = await file.text();
+      }
+      if (!extracted.trim()) throw new Error("No text content found in file");
+      setText(extracted.trim());
+      if (!title) setTitle(file.name.replace(/\.[^.]+$/, ""));
+    } catch (err) {
+      setFileError(err instanceof Error ? err.message : "Could not read file");
+      setFileName(null);
+    } finally {
+      setIsParsingFile(false);
+    }
+  }, [title]);
+
+  const handleFileDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file) void processFile(file);
+  }, [processFile]);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) void processFile(file);
+  };
+
+  const clearFile = () => {
+    setFileName(null);
+    setText("");
+    setFileError(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -48,6 +153,12 @@ export function InputForm({ onCreateComplete, onSelectHistory }: InputFormProps)
   };
 
   const isPending = createAnalysis.isPending;
+
+  const modes: { id: InputMode; label: string; icon: React.ReactNode }[] = [
+    { id: "text", label: "Paste text", icon: <AlignLeft className="w-3.5 h-3.5" /> },
+    { id: "url", label: "From URL", icon: <Link2 className="w-3.5 h-3.5" /> },
+    { id: "file", label: "Upload file", icon: <FileText className="w-3.5 h-3.5" /> },
+  ];
 
   return (
     <div className="flex-1 flex flex-col">
@@ -76,6 +187,17 @@ export function InputForm({ onCreateComplete, onSelectHistory }: InputFormProps)
             <p className="text-muted-foreground text-base leading-relaxed max-w-xs">
               Simulate public reaction before you send. SwarmCast generates 25 unique AI personas, crafts authentic audio, and builds a focus group podcast — in real time.
             </p>
+
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground uppercase tracking-widest font-mono">Accepts</p>
+              <div className="flex flex-wrap gap-2">
+                {["News articles", "Press releases", "PDFs", "Any URL", "Plain text"].map(name => (
+                  <span key={name} className="text-xs font-mono text-muted-foreground border border-border/40 rounded px-2 py-1">
+                    {name}
+                  </span>
+                ))}
+              </div>
+            </div>
           </div>
 
           <div className="space-y-3">
@@ -108,6 +230,8 @@ export function InputForm({ onCreateComplete, onSelectHistory }: InputFormProps)
             className="flex-1 flex flex-col p-6 lg:p-12 xl:p-16 gap-6"
           >
             <form onSubmit={handleSubmit} className="space-y-5 max-w-xl">
+
+              {/* Title */}
               <div className="space-y-1.5">
                 <label htmlFor="title" className="text-xs font-mono text-muted-foreground uppercase tracking-widest">
                   Announcement title
@@ -124,37 +248,186 @@ export function InputForm({ onCreateComplete, onSelectHistory }: InputFormProps)
                 />
               </div>
 
-              <div className="space-y-1.5">
+              {/* Mode tabs */}
+              <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <label htmlFor="text" className="text-xs font-mono text-muted-foreground uppercase tracking-widest">
-                    Document content
-                  </label>
-                  <div className="flex items-center gap-3">
-                    <span className="text-[10px] font-mono text-muted-foreground/50">
-                      {text.length > 0 ? `${text.length} chars` : ""}
-                    </span>
-                    {!isPending && (
+                  <div className="flex gap-1 bg-card border border-border/60 rounded-lg p-1">
+                    {modes.map(m => (
                       <button
+                        key={m.id}
                         type="button"
-                        onClick={loadExample}
-                        className="flex items-center gap-1 text-[10px] font-mono text-muted-foreground/60 hover:text-primary transition-colors uppercase tracking-widest"
+                        onClick={() => setMode(m.id)}
+                        disabled={isPending}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-mono transition-all ${
+                          mode === m.id
+                            ? "bg-primary text-primary-foreground"
+                            : "text-muted-foreground hover:text-foreground"
+                        }`}
                       >
-                        <Sparkles className="w-3 h-3" />
-                        Try example
+                        {m.icon}
+                        {m.label}
                       </button>
-                    )}
+                    ))}
                   </div>
+                  {!isPending && (
+                    <button
+                      type="button"
+                      onClick={loadExample}
+                      className="flex items-center gap-1 text-[10px] font-mono text-muted-foreground/60 hover:text-primary transition-colors uppercase tracking-widest"
+                    >
+                      <Sparkles className="w-3 h-3" />
+                      Try example
+                    </button>
+                  )}
                 </div>
-                <textarea
-                  id="text"
-                  placeholder="Paste your press release, memo, or announcement text here..."
-                  value={text}
-                  onChange={(e) => setText(e.target.value)}
-                  disabled={isPending}
-                  rows={10}
-                  data-testid="input-text"
-                  className="w-full bg-card border border-border/60 rounded-md px-4 py-3 text-base text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring transition-all resize-y disabled:opacity-50 min-h-[220px]"
-                />
+
+                <AnimatePresence mode="wait">
+                  {/* TEXT MODE */}
+                  {mode === "text" && (
+                    <motion.div
+                      key="text"
+                      initial={{ opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -4 }}
+                      transition={{ duration: 0.15 }}
+                      className="space-y-1"
+                    >
+                      <div className="flex justify-end">
+                        <span className="text-[10px] font-mono text-muted-foreground/40">
+                          {text.length > 0 ? `${text.length} chars` : ""}
+                        </span>
+                      </div>
+                      <textarea
+                        id="text"
+                        placeholder="Paste your press release, memo, blog post, or any announcement text here..."
+                        value={text}
+                        onChange={(e) => setText(e.target.value)}
+                        disabled={isPending}
+                        rows={10}
+                        data-testid="input-text"
+                        className="w-full bg-card border border-border/60 rounded-md px-4 py-3 text-base text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring transition-all resize-y disabled:opacity-50 min-h-[220px]"
+                      />
+                    </motion.div>
+                  )}
+
+                  {/* URL MODE */}
+                  {mode === "url" && (
+                    <motion.div
+                      key="url"
+                      initial={{ opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -4 }}
+                      transition={{ duration: 0.15 }}
+                      className="space-y-3"
+                    >
+                      <div className="flex gap-2">
+                        <input
+                          type="url"
+                          placeholder="https://techcrunch.com/article/..."
+                          value={urlInput}
+                          onChange={(e) => { setUrlInput(e.target.value); setUrlFetched(false); setUrlError(null); }}
+                          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void handleFetchUrl(); }}}
+                          disabled={isPending || isFetchingUrl}
+                          className="flex-1 bg-card border border-border/60 rounded-md px-4 py-3 text-base text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring transition-all disabled:opacity-50"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => void handleFetchUrl()}
+                          disabled={!urlInput.trim() || isFetchingUrl || isPending}
+                          className="flex items-center gap-2 px-4 py-3 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-40 whitespace-nowrap"
+                        >
+                          {isFetchingUrl ? <Loader2 className="w-4 h-4 animate-spin" /> : <Link2 className="w-4 h-4" />}
+                          {isFetchingUrl ? "Fetching…" : "Fetch"}
+                        </button>
+                      </div>
+
+                      {urlError && (
+                        <div className="flex items-center gap-2 text-sm text-destructive">
+                          <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                          {urlError}
+                        </div>
+                      )}
+
+                      {urlFetched && text && (
+                        <div className="rounded-md border border-border/40 bg-card/40 p-3 space-y-1.5">
+                          <p className="text-xs font-mono text-positive uppercase tracking-widest">Content extracted</p>
+                          <p className="text-sm text-muted-foreground line-clamp-4 leading-relaxed">{text}</p>
+                          <p className="text-[10px] font-mono text-muted-foreground/50">{text.length} characters</p>
+                        </div>
+                      )}
+
+                      {!urlFetched && !urlError && (
+                        <p className="text-xs text-muted-foreground/60">
+                          Works with news articles, blog posts, press releases, product pages, and most public web pages.
+                        </p>
+                      )}
+                    </motion.div>
+                  )}
+
+                  {/* FILE MODE */}
+                  {mode === "file" && (
+                    <motion.div
+                      key="file"
+                      initial={{ opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -4 }}
+                      transition={{ duration: 0.15 }}
+                    >
+                      {fileName && !fileError ? (
+                        <div className="rounded-md border border-border/40 bg-card/40 p-4 flex items-start gap-3">
+                          <FileText className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">{fileName}</p>
+                            <p className="text-xs text-muted-foreground mt-0.5">{text.length} characters extracted</p>
+                            <p className="text-xs text-muted-foreground/60 mt-1.5 line-clamp-2">{text.slice(0, 120)}…</p>
+                          </div>
+                          <button type="button" onClick={clearFile} className="text-muted-foreground/50 hover:text-foreground transition-colors">
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div
+                          className={`relative border-2 border-dashed rounded-lg p-10 flex flex-col items-center justify-center gap-3 text-center transition-colors cursor-pointer ${
+                            isDragging
+                              ? "border-primary bg-primary/5"
+                              : "border-border/50 hover:border-border hover:bg-card/30"
+                          }`}
+                          onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                          onDragLeave={() => setIsDragging(false)}
+                          onDrop={handleFileDrop}
+                          onClick={() => fileInputRef.current?.click()}
+                        >
+                          <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept=".txt,.pdf,.md,.doc,.docx"
+                            className="hidden"
+                            onChange={handleFileChange}
+                          />
+                          {isParsingFile ? (
+                            <Loader2 className="w-8 h-8 text-primary animate-spin" />
+                          ) : (
+                            <UploadCloud className={`w-8 h-8 transition-colors ${isDragging ? "text-primary" : "text-muted-foreground/50"}`} />
+                          )}
+                          <div>
+                            <p className="text-sm font-medium">
+                              {isParsingFile ? "Extracting text…" : "Drop a file or click to browse"}
+                            </p>
+                            <p className="text-xs text-muted-foreground/60 mt-1">
+                              PDF, TXT, MD — up to 10 MB
+                            </p>
+                          </div>
+                          {fileError && (
+                            <div className="flex items-center gap-1.5 text-xs text-destructive">
+                              <AlertCircle className="w-3.5 h-3.5" />
+                              {fileError}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
 
               <Button

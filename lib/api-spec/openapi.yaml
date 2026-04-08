@@ -1,6 +1,5 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
   description: SwarmCast API specification
@@ -18,7 +17,6 @@ paths:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -32,7 +30,6 @@ paths:
       operationId: listAnalyses
       tags: [analyses]
       summary: List recent analyses
-      description: Returns the last 10 analyses
       responses:
         "200":
           description: List of analyses
@@ -46,7 +43,6 @@ paths:
       operationId: createAnalysis
       tags: [analyses]
       summary: Create a new analysis
-      description: Starts an analysis pipeline for the provided document
       requestBody:
         required: true
         content:
@@ -102,6 +98,27 @@ paths:
             text/event-stream:
               schema:
                 type: string
+
+  /analyses/{id}/swarm-signed-url:
+    get:
+      operationId: getSwarmSignedUrl
+      tags: [analyses]
+      summary: Get signed URL for SwarmCast ConvAI session
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Signed URL for ElevenLabs ConvAI session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SwarmSignedUrlResponse"
+        "404":
+          description: Analysis not found or agent not ready
 
 components:
   schemas:
@@ -204,6 +221,30 @@ components:
         - url
         - snippet
 
+    AlignmentWord:
+      type: object
+      properties:
+        word:
+          type: string
+        start:
+          type: number
+        end:
+          type: number
+      required:
+        - word
+        - start
+        - end
+
+    AlignmentData:
+      type: object
+      properties:
+        words:
+          type: array
+          items:
+            $ref: "#/components/schemas/AlignmentWord"
+      required:
+        - words
+
     Persona:
       type: object
       properties:
@@ -263,6 +304,10 @@ components:
           type: ["number", "null"]
         rank:
           type: ["integer", "null"]
+        alignmentData:
+          oneOf:
+            - $ref: "#/components/schemas/AlignmentData"
+            - type: "null"
       required:
         - id
         - analysisId
@@ -287,6 +332,53 @@ components:
       required:
         - id
         - analysisId
+
+    ProblemSegment:
+      type: object
+      properties:
+        quote:
+          type: string
+        triggeredBy:
+          type: array
+          items:
+            type: string
+        reason:
+          type: string
+      required:
+        - quote
+        - triggeredBy
+        - reason
+
+    MontageTimelineEntry:
+      type: object
+      properties:
+        personaId:
+          type: ["integer", "null"]
+        personaName:
+          type: string
+        startSec:
+          type: number
+        endSec:
+          type: number
+        script:
+          type: string
+        words:
+          type: ["array", "null"]
+          items:
+            $ref: "#/components/schemas/AlignmentWord"
+      required:
+        - personaName
+        - startSec
+        - endSec
+        - script
+
+    SwarmSignedUrlResponse:
+      type: object
+      properties:
+        signedUrl:
+          type: string
+      required:
+        - signedUrl
 
     FullAnalysis:
       type: object
@@ -337,6 +429,20 @@ components:
           type: ["string", "null"]
         errorMessage:
           type: ["string", "null"]
+        agentId:
+          type: ["string", "null"]
+        contentSuggestions:
+          type: ["array", "null"]
+          items:
+            type: string
+        problemSegments:
+          type: ["array", "null"]
+          items:
+            $ref: "#/components/schemas/ProblemSegment"
+        montageTimeline:
+          type: ["array", "null"]
+          items:
+            $ref: "#/components/schemas/MontageTimelineEntry"
         personas:
           type: array
           items:

@@ -6,6 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from "./alignmentData";
+export * from "./alignmentWord";
 export * from "./analysisSummary";
 export * from "./createAnalysisBody";
 export * from "./createAnalysisResponse";
@@ -15,4 +17,7 @@ export * from "./factCheckResult";
 export * from "./forecastPoint";
 export * from "./fullAnalysis";
 export * from "./healthStatus";
+export * from "./montageTimelineEntry";
 export * from "./persona";
+export * from "./problemSegment";
+export * from "./swarmSignedUrlResponse";

@@ -52,6 +52,16 @@ export interface ExaResult {
   publishedDate?: string | null;
 }
 
+export interface AlignmentWord {
+  word: string;
+  start: number;
+  end: number;
+}
+
+export interface AlignmentData {
+  words: AlignmentWord[];
+}
+
 export interface Persona {
   id: number;
   analysisId: string;
@@ -107,6 +117,7 @@ export interface Persona {
   voiceScore?: number | null;
   /** @nullable */
   rank?: number | null;
+  alignmentData?: AlignmentData | null;
 }
 
 export interface ForecastPoint {
@@ -122,6 +133,27 @@ export interface ForecastPoint {
   confidenceHigh?: number | null;
   /** @nullable */
   isForecast?: boolean | null;
+}
+
+export interface ProblemSegment {
+  quote: string;
+  triggeredBy: string[];
+  reason: string;
+}
+
+export interface MontageTimelineEntry {
+  /** @nullable */
+  personaId?: number | null;
+  personaName: string;
+  startSec: number;
+  endSec: number;
+  script: string;
+  /** @nullable */
+  words?: AlignmentWord[] | null;
+}
+
+export interface SwarmSignedUrlResponse {
+  signedUrl: string;
 }
 
 export interface FullAnalysis {
@@ -157,6 +189,14 @@ export interface FullAnalysis {
   montageUrl?: string | null;
   /** @nullable */
   errorMessage?: string | null;
+  /** @nullable */
+  agentId?: string | null;
+  /** @nullable */
+  contentSuggestions?: string[] | null;
+  /** @nullable */
+  problemSegments?: ProblemSegment[] | null;
+  /** @nullable */
+  montageTimeline?: MontageTimelineEntry[] | null;
   personas: Persona[];
   forecastPoints: ForecastPoint[];
 }

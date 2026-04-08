@@ -8,7 +8,6 @@
 import * as zod from "zod";
 
 /**
- * Returns server health status
  * @summary Health check
  */
 export const HealthCheckResponse = zod.object({
@@ -16,7 +15,6 @@ export const HealthCheckResponse = zod.object({
 });
 
 /**
- * Returns the last 10 analyses
  * @summary List recent analyses
  */
 export const ListAnalysesResponseItem = zod.object({
@@ -31,7 +29,6 @@ export const ListAnalysesResponseItem = zod.object({
 export const ListAnalysesResponse = zod.array(ListAnalysesResponseItem);
 
 /**
- * Starts an analysis pipeline for the provided document
  * @summary Create a new analysis
  */
 export const CreateAnalysisBody = zod.object({
@@ -90,6 +87,37 @@ export const GetAnalysisResponse = zod.object({
   narrativeFractures: zod.array(zod.string()).nullish(),
   montageUrl: zod.string().nullish(),
   errorMessage: zod.string().nullish(),
+  agentId: zod.string().nullish(),
+  contentSuggestions: zod.array(zod.string()).nullish(),
+  problemSegments: zod
+    .array(
+      zod.object({
+        quote: zod.string(),
+        triggeredBy: zod.array(zod.string()),
+        reason: zod.string(),
+      }),
+    )
+    .nullish(),
+  montageTimeline: zod
+    .array(
+      zod.object({
+        personaId: zod.number().nullish(),
+        personaName: zod.string(),
+        startSec: zod.number(),
+        endSec: zod.number(),
+        script: zod.string(),
+        words: zod
+          .array(
+            zod.object({
+              word: zod.string(),
+              start: zod.number(),
+              end: zod.number(),
+            }),
+          )
+          .nullish(),
+      }),
+    )
+    .nullish(),
   personas: zod.array(
     zod.object({
       id: zod.number(),
@@ -120,6 +148,20 @@ export const GetAnalysisResponse = zod.object({
       hasAudio: zod.boolean().nullish(),
       voiceScore: zod.number().nullish(),
       rank: zod.number().nullish(),
+      alignmentData: zod
+        .union([
+          zod.object({
+            words: zod.array(
+              zod.object({
+                word: zod.string(),
+                start: zod.number(),
+                end: zod.number(),
+              }),
+            ),
+          }),
+          zod.null(),
+        ])
+        .optional(),
     }),
   ),
   forecastPoints: zod.array(
@@ -140,4 +182,15 @@ export const GetAnalysisResponse = zod.object({
  */
 export const StreamAnalysisParams = zod.object({
   id: zod.coerce.string(),
+});
+
+/**
+ * @summary Get signed URL for SwarmCast ConvAI session
+ */
+export const GetSwarmSignedUrlParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const GetSwarmSignedUrlResponse = zod.object({
+  signedUrl: zod.string(),
 });

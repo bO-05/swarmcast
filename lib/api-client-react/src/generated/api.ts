@@ -22,6 +22,7 @@ import type {
   CreateAnalysisResponse,
   FullAnalysis,
   HealthStatus,
+  SwarmSignedUrlResponse,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -34,7 +35,6 @@ type Awaited<O> = O extends AwaitedInput<infer T> ? T : never;
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
 /**
- * Returns server health status
  * @summary Health check
  */
 export const getHealthCheckUrl = () => {
@@ -110,7 +110,6 @@ export function useHealthCheck<
 }
 
 /**
- * Returns the last 10 analyses
  * @summary List recent analyses
  */
 export const getListAnalysesUrl = () => {
@@ -186,7 +185,6 @@ export function useListAnalyses<
 }
 
 /**
- * Starts an analysis pipeline for the provided document
  * @summary Create a new analysis
  */
 export const getCreateAnalysisUrl = () => {
@@ -438,6 +436,93 @@ export function useStreamAnalysis<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getStreamAnalysisQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Get signed URL for SwarmCast ConvAI session
+ */
+export const getGetSwarmSignedUrlUrl = (id: string) => {
+  return `/api/analyses/${id}/swarm-signed-url`;
+};
+
+export const getSwarmSignedUrl = async (
+  id: string,
+  options?: RequestInit,
+): Promise<SwarmSignedUrlResponse> => {
+  return customFetch<SwarmSignedUrlResponse>(getGetSwarmSignedUrlUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetSwarmSignedUrlQueryKey = (id: string) => {
+  return [`/api/analyses/${id}/swarm-signed-url`] as const;
+};
+
+export const getGetSwarmSignedUrlQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSwarmSignedUrl>>,
+  TError = ErrorType<void>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getSwarmSignedUrl>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetSwarmSignedUrlQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getSwarmSignedUrl>>
+  > = ({ signal }) => getSwarmSignedUrl(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSwarmSignedUrl>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetSwarmSignedUrlQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSwarmSignedUrl>>
+>;
+export type GetSwarmSignedUrlQueryError = ErrorType<void>;
+
+/**
+ * @summary Get signed URL for SwarmCast ConvAI session
+ */
+
+export function useGetSwarmSignedUrl<
+  TData = Awaited<ReturnType<typeof getSwarmSignedUrl>>,
+  TError = ErrorType<void>,
+>(
+  id: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getSwarmSignedUrl>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetSwarmSignedUrlQueryOptions(id, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

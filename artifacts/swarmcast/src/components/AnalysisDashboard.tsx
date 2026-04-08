@@ -1,6 +1,9 @@
 import { useState } from "react";
-import { FullAnalysis } from "@workspace/api-client-react";
+import { FullAnalysis, MontageTimelineEntry, ProblemSegment } from "@workspace/api-client-react";
 import { AudioPlayer } from "./AudioPlayer";
+import { KaraokeMontagePlayer } from "./KaraokeMontagePlayer";
+import { HowToImprove } from "./HowToImprove";
+import { SwarmChat } from "./SwarmChat";
 import { HistorySidebar } from "./HistorySidebar";
 import { SentimentForecastChart } from "./SentimentForecastChart";
 import { PersonaCard } from "./PersonaCard";
@@ -31,6 +34,7 @@ function Section({ label, children }: { label: string; children: React.ReactNode
 
 export function AnalysisDashboard({ analysis, onSelectHistory, autoPlayMontage = false }: AnalysisDashboardProps) {
   const {
+    id,
     title,
     avgSentiment = 0,
     dominantEmotion,
@@ -47,6 +51,10 @@ export function AnalysisDashboard({ analysis, onSelectHistory, autoPlayMontage =
     forecastPoints = [],
     keyThemes,
     narrativeFractures,
+    agentId,
+    contentSuggestions,
+    problemSegments,
+    montageTimeline,
   } = analysis;
 
   const viralPct = Math.round((viralPotential ?? 0) * 100);
@@ -75,6 +83,12 @@ export function AnalysisDashboard({ analysis, onSelectHistory, autoPlayMontage =
   const themesArr = Array.isArray(keyThemes) ? keyThemes as string[] : [];
   const fracturesArr = Array.isArray(narrativeFractures) ? narrativeFractures as string[] : [];
 
+  const suggestionsArr = Array.isArray(contentSuggestions) ? contentSuggestions as string[] : [];
+  const segmentsArr = Array.isArray(problemSegments) ? problemSegments as ProblemSegment[] : [];
+  const timelineArr = Array.isArray(montageTimeline) ? montageTimeline as MontageTimelineEntry[] : [];
+
+  const hasKaraokeTimeline = montageUrl && timelineArr.length > 0;
+
   return (
     <div className="flex h-[calc(100vh-3.5rem)] overflow-hidden">
 
@@ -85,14 +99,19 @@ export function AnalysisDashboard({ analysis, onSelectHistory, autoPlayMontage =
         <div className="border-b border-border/50 px-6 md:px-10 py-6">
           <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
             <h1 className="font-display text-2xl md:text-3xl text-foreground leading-tight">{title}</h1>
-            <p className="text-xs font-mono text-muted-foreground mt-1">
-              SwarmCast analysis · {personas.length} personas
-              {consensusForming != null && (
-                <span className={`ml-3 inline-flex items-center gap-1 ${consensusForming ? "text-positive" : "text-amber-400"}`}>
-                  · {consensusForming ? "Consensus forming" : "Polarised swarm"}
-                </span>
+            <div className="flex items-center gap-4 mt-1 flex-wrap">
+              <p className="text-xs font-mono text-muted-foreground">
+                SwarmCast analysis · {personas.length} personas
+                {consensusForming != null && (
+                  <span className={`ml-3 inline-flex items-center gap-1 ${consensusForming ? "text-positive" : "text-amber-400"}`}>
+                    · {consensusForming ? "Consensus forming" : "Polarised swarm"}
+                  </span>
+                )}
+              </p>
+              {agentId && (
+                <SwarmChat analysisId={id} agentId={agentId} title={title} />
               )}
-            </p>
+            </div>
           </motion.div>
         </div>
 
@@ -114,7 +133,16 @@ export function AnalysisDashboard({ analysis, onSelectHistory, autoPlayMontage =
                     <p className="text-sm text-muted-foreground mb-3">
                       Synthesised reactions from {personas.filter(p => p.audioUrl).length} unique voices discussing your announcement.
                     </p>
-                    <AudioPlayer src={montageUrl} autoPlay={autoPlayMontage} className="w-full max-w-lg" />
+                    {hasKaraokeTimeline ? (
+                      <KaraokeMontagePlayer
+                        src={montageUrl}
+                        timeline={timelineArr}
+                        autoPlay={autoPlayMontage}
+                        className="w-full max-w-2xl"
+                      />
+                    ) : (
+                      <AudioPlayer src={montageUrl} autoPlay={autoPlayMontage} className="w-full max-w-lg" />
+                    )}
                   </div>
                 </div>
               </Section>
@@ -221,6 +249,14 @@ export function AnalysisDashboard({ analysis, onSelectHistory, autoPlayMontage =
               )}
             </div>
           </motion.div>
+
+          {/* Prescriptive intelligence */}
+          {(suggestionsArr.length > 0 || segmentsArr.length > 0) && (
+            <HowToImprove
+              contentSuggestions={suggestionsArr}
+              problemSegments={segmentsArr}
+            />
+          )}
 
           {/* Narrative intelligence — key themes + fractures */}
           {(themesArr.length > 0 || fracturesArr.length > 0) && (

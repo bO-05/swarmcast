@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 
 const ELEVENLABS_API_URL = "https://api.elevenlabs.io";
+const NARRATOR_VOICE_ID = "onwK4e9ZLuTAKqWW03F9";
 
 function getApiKey(): string {
   const key = process.env["ELEVENLABS_API_KEY"];
@@ -102,6 +103,10 @@ export function selectVoicesForPersonas(
   return assignments;
 }
 
+function mbtiExtraversionCoeff(mbti: string): number {
+  return (mbti ?? "").toUpperCase().startsWith("E") ? 1.0 : 0.6;
+}
+
 function buildVoiceScript(
   persona: {
     personaName: string;
@@ -128,6 +133,17 @@ function buildVoiceScript(
   return words.slice(0, 95).join(" ") + ".";
 }
 
+export interface AudioResult {
+  audioUrl: string;
+  audioPath: string;
+  script: string;
+}
+
+export interface PronunciationDictLocator {
+  dictionaryId: string;
+  versionId: string;
+}
+
 export async function generatePersonaAudio(
   persona: {
     id: number;
@@ -139,13 +155,41 @@ export async function generatePersonaAudio(
     finalOpinion: string;
     keyConcern: string;
     finalSentiment: number;
+    influenceWeight?: number;
+    beliefConfidence?: number;
+    mbti?: string;
   },
   analysisId: string,
   exaTitle: string,
-): Promise<string> {
+  pronunciationDictLocator?: PronunciationDictLocator,
+): Promise<AudioResult> {
   const apiKey = getApiKey();
-
   const script = buildVoiceScript(persona, exaTitle);
+
+  const extCoeff = mbtiExtraversionCoeff(persona.mbti ?? "I");
+  const style = Math.min(Math.abs(persona.finalSentiment) * extCoeff, 1.0);
+  const stability = Math.max(0.3, Math.min(0.9, persona.beliefConfidence ?? 0.5));
+  const similarity_boost = Math.max(0.5, Math.min(1.0, (persona.influenceWeight ?? 1.5) / 3.0));
+
+  const body: Record<string, unknown> = {
+    text: script,
+    model_id: "eleven_multilingual_v2",
+    voice_settings: {
+      stability,
+      similarity_boost,
+      style,
+      use_speaker_boost: true,
+    },
+  };
+
+  if (pronunciationDictLocator) {
+    body.pronunciation_dictionary_locators = [
+      {
+        pronunciation_dictionary_id: pronunciationDictLocator.dictionaryId,
+        version_id: pronunciationDictLocator.versionId,
+      },
+    ];
+  }
 
   const response = await fetch(
     `${ELEVENLABS_API_URL}/v1/text-to-speech/${persona.voiceId}`,
@@ -156,16 +200,7 @@ export async function generatePersonaAudio(
         "Content-Type": "application/json",
         "xi-api-key": apiKey,
       },
-      body: JSON.stringify({
-        text: script,
-        model_id: "eleven_monolingual_v1",
-        voice_settings: {
-          stability: 0.45,
-          similarity_boost: 0.75,
-          style: 0.0,
-          use_speaker_boost: true,
-        },
-      }),
+      body: JSON.stringify(body),
     },
   );
 
@@ -180,5 +215,390 @@ export async function generatePersonaAudio(
   const filePath = path.join(dir, `${persona.id}.mp3`);
   fs.writeFileSync(filePath, audioBuffer);
 
-  return `/api/static/audio/${analysisId}/${persona.id}.mp3`;
+  return {
+    audioUrl: `/api/static/audio/${analysisId}/${persona.id}.mp3`,
+    audioPath: filePath,
+    script,
+  };
+}
+
+export async function designVoiceForPersona(
+  persona: {
+    personaName: string;
+    gender: string;
+    age: number;
+    country: string;
+    accent: string;
+    voiceStyle: string;
+    personaType: string;
+    background: string;
+  },
+): Promise<string | null> {
+  const apiKey = getApiKey();
+
+  const genderLabel = (persona.gender ?? "").toLowerCase() === "female" ? "female" : "male";
+  const ageLabel = persona.age <= 33 ? "young" : persona.age <= 55 ? "middle-aged" : "older";
+  const description = `A ${ageLabel} ${genderLabel} from ${persona.country} with a ${persona.accent} accent. Voice style: ${persona.voiceStyle}. Persona archetype: ${persona.personaType}. Background: ${(persona.background ?? "").slice(0, 100)}`;
+
+  const sampleText = `My perspective on this matter is clear, and I think it deserves serious consideration from everyone involved.`;
+
+  try {
+    const genRes = await fetch(`${ELEVENLABS_API_URL}/v1/voice-generation/generate-voice`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "xi-api-key": apiKey,
+      },
+      body: JSON.stringify({
+        voice_description: description,
+        text: sampleText,
+      }),
+    });
+
+    if (!genRes.ok) return null;
+
+    const genData = (await genRes.json()) as {
+      previews?: Array<{ generated_voice_id: string }>;
+    };
+
+    const generatedVoiceId = genData.previews?.[0]?.generated_voice_id;
+    if (!generatedVoiceId) return null;
+
+    const createRes = await fetch(`${ELEVENLABS_API_URL}/v1/voice-generation/create-voice`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "xi-api-key": apiKey,
+      },
+      body: JSON.stringify({
+        voice_name: `SC_${persona.personaName.replace(/\s+/g, "_").slice(0, 20)}`,
+        voice_description: description,
+        generated_voice_id: generatedVoiceId,
+        labels: {
+          use_case: "swarmcast",
+          persona_type: persona.personaType,
+        },
+      }),
+    });
+
+    if (!createRes.ok) return null;
+
+    const createData = (await createRes.json()) as { voice_id?: string };
+    return createData.voice_id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function buildPlsXml(aliases: Array<{ grapheme: string; alias: string }>): string {
+  const lexemes = aliases
+    .map(
+      ({ grapheme, alias }) =>
+        `  <lexeme>\n    <grapheme>${grapheme}</grapheme>\n    <alias>${alias}</alias>\n  </lexeme>`,
+    )
+    .join("\n");
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<lexicon version="1.0"
+  xmlns="http://www.w3.org/2005/01/pronunciation-lexicon"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.w3.org/2005/01/pronunciation-lexicon http://www.w3.org/TR/2007/CR-pronunciation-lexicon-20071212/pls.xsd"
+  alphabet="ipa"
+  xml:lang="en-US">
+${lexemes}
+</lexicon>`;
+}
+
+function extractAcronymAliases(keywords: string): Array<{ grapheme: string; alias: string }> {
+  const digitWords = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
+  const terms = keywords.split(",").map((t) => t.trim());
+  const results: Array<{ grapheme: string; alias: string }> = [];
+  const seen = new Set<string>();
+
+  for (const term of terms) {
+    const upper = term.toUpperCase();
+    if (/^[A-Z]{2,6}(-\d)?$/.test(upper) && !seen.has(upper)) {
+      seen.add(upper);
+      const base = upper.replace(/-\d$/, "");
+      const suffix = upper.match(/-(\d)$/);
+      const letters = base.split("").join(" ");
+      const alias = suffix
+        ? `${letters} ${digitWords[parseInt(suffix[1])] ?? suffix[1]}`
+        : letters;
+      results.push({ grapheme: upper, alias });
+    }
+  }
+
+  return results;
+}
+
+export async function createPronunciationDictionary(
+  name: string,
+  keywords: string,
+): Promise<PronunciationDictLocator | null> {
+  const apiKey = getApiKey();
+  const aliases = extractAcronymAliases(keywords);
+  if (aliases.length === 0) return null;
+
+  const plsXml = buildPlsXml(aliases);
+
+  try {
+    const form = new FormData();
+    form.append("name", name);
+    form.append(
+      "file",
+      new Blob([plsXml], { type: "application/pls+xml" }),
+      "pronunciation.pls",
+    );
+
+    const res = await fetch(`${ELEVENLABS_API_URL}/v1/pronunciation-dictionaries`, {
+      method: "POST",
+      headers: { "xi-api-key": apiKey },
+      body: form,
+    });
+
+    if (!res.ok) return null;
+
+    const data = (await res.json()) as { id?: string; version_id?: string };
+    if (!data.id || !data.version_id) return null;
+
+    return { dictionaryId: data.id, versionId: data.version_id };
+  } catch {
+    return null;
+  }
+}
+
+export interface AlignmentWord {
+  word: string;
+  start: number;
+  end: number;
+}
+
+export interface AlignmentData {
+  words: AlignmentWord[];
+}
+
+export async function getAlignmentData(
+  audioPath: string,
+  script: string,
+): Promise<AlignmentData | null> {
+  const apiKey = getApiKey();
+
+  try {
+    const audioBuffer = fs.readFileSync(audioPath);
+    const audioBlob = new Blob([audioBuffer], { type: "audio/mpeg" });
+
+    const form = new FormData();
+    form.append("audio", audioBlob, "audio.mp3");
+    form.append("transcript", script);
+
+    const res = await fetch(`${ELEVENLABS_API_URL}/v1/forced-alignment`, {
+      method: "POST",
+      headers: { "xi-api-key": apiKey },
+      body: form,
+    });
+
+    if (!res.ok) return null;
+
+    const data = (await res.json()) as {
+      characters?: string[];
+      character_start_times_seconds?: number[];
+      character_end_times_seconds?: number[];
+      words?: Array<{ word: string; start: number; end: number }>;
+    };
+
+    if (data.words && data.words.length > 0) {
+      return { words: data.words };
+    }
+
+    if (
+      data.characters &&
+      data.character_start_times_seconds &&
+      data.character_end_times_seconds
+    ) {
+      const words = charsToWords(
+        data.characters,
+        data.character_start_times_seconds,
+        data.character_end_times_seconds,
+      );
+      return { words };
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function charsToWords(
+  chars: string[],
+  starts: number[],
+  ends: number[],
+): AlignmentWord[] {
+  const words: AlignmentWord[] = [];
+  let currentWord = "";
+  let wordStart = 0;
+
+  for (let i = 0; i < chars.length; i++) {
+    const c = chars[i];
+    if (c === " " || c === "\n") {
+      if (currentWord.length > 0) {
+        words.push({
+          word: currentWord,
+          start: wordStart,
+          end: ends[i - 1] ?? ends[i],
+        });
+        currentWord = "";
+      }
+    } else {
+      if (currentWord.length === 0) wordStart = starts[i];
+      currentWord += c;
+    }
+  }
+
+  if (currentWord.length > 0) {
+    words.push({
+      word: currentWord,
+      start: wordStart,
+      end: ends[ends.length - 1],
+    });
+  }
+
+  return words;
+}
+
+export async function generateNarratorIntro(
+  title: string,
+  dominantEmotion: string,
+  riskLevel: string,
+  analysisId: string,
+): Promise<{ audioUrl: string; audioPath: string; script: string } | null> {
+  const apiKey = getApiKey();
+
+  const emotion = (dominantEmotion || "mixed").toLowerCase();
+  const risk = (riskLevel || "medium").toLowerCase();
+  const script = `Welcome to SwarmCast. Today we're analyzing: ${title}. Our swarm of twenty-five AI personas has reviewed this content. The dominant emotional response is ${emotion}, with a ${risk} risk level. Here are their voices.`;
+
+  try {
+    const response = await fetch(
+      `${ELEVENLABS_API_URL}/v1/text-to-speech/${NARRATOR_VOICE_ID}`,
+      {
+        method: "POST",
+        headers: {
+          Accept: "audio/mpeg",
+          "Content-Type": "application/json",
+          "xi-api-key": apiKey,
+        },
+        body: JSON.stringify({
+          text: script,
+          model_id: "eleven_multilingual_v2",
+          voice_settings: {
+            stability: 0.75,
+            similarity_boost: 0.85,
+            style: 0.0,
+            use_speaker_boost: true,
+          },
+        }),
+      },
+    );
+
+    if (!response.ok) return null;
+
+    const audioBuffer = Buffer.from(await response.arrayBuffer());
+    const dir = path.join(process.cwd(), "static", "audio", analysisId);
+    fs.mkdirSync(dir, { recursive: true });
+    const filePath = path.join(dir, "narrator_intro.mp3");
+    fs.writeFileSync(filePath, audioBuffer);
+
+    return {
+      audioUrl: `/api/static/audio/${analysisId}/narrator_intro.mp3`,
+      audioPath: filePath,
+      script,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function createSwarmAgent(
+  analysisId: string,
+  title: string,
+  swarmSummary: string,
+  personas: Array<{
+    name: string;
+    type: string;
+    country: string;
+    finalSentiment: number;
+    keyConcern: string;
+  }>,
+): Promise<string | null> {
+  const apiKey = getApiKey();
+
+  const personaList = personas
+    .slice(0, 10)
+    .map(
+      (p) =>
+        `- ${p.name} (${p.type}, ${p.country}): sentiment ${p.finalSentiment.toFixed(2)}, concern: ${p.keyConcern}`,
+    )
+    .join("\n");
+
+  const systemPrompt = `You are the SwarmCast Collective — a meta-intelligence representing 25 diverse AI personas who have just analyzed content titled: "${title}".
+
+Swarm Analysis: ${swarmSummary}
+
+Key Personas in Your Collective:
+${personaList}
+
+When answering questions, draw on specific persona perspectives using their names. Reference sentiment scores and concerns authentically. Present the full spectrum of views. Be direct, insightful, and analytically honest. Keep responses conversational and under 150 words.`;
+
+  const firstMessage = `Hello! I'm the SwarmCast Collective — 25 voices who just analyzed "${title}". ${(swarmSummary ?? "").slice(0, 100)}... Ask me anything about how different communities might respond to this content.`;
+
+  try {
+    const res = await fetch(`${ELEVENLABS_API_URL}/v1/convai/agents/create`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "xi-api-key": apiKey,
+      },
+      body: JSON.stringify({
+        name: `SwarmCast-${analysisId.slice(0, 8)}`,
+        conversation_config: {
+          agent: {
+            prompt: {
+              prompt: systemPrompt,
+              llm: "gpt-4o-mini",
+              temperature: 0.7,
+              max_tokens: 200,
+            },
+            first_message: firstMessage,
+            language: "en",
+          },
+          tts: {
+            voice_id: NARRATOR_VOICE_ID,
+          },
+        },
+      }),
+    });
+
+    if (!res.ok) return null;
+    const data = (await res.json()) as { agent_id?: string };
+    return data.agent_id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function getConvAISignedUrl(agentId: string): Promise<string | null> {
+  const apiKey = getApiKey();
+  try {
+    const res = await fetch(
+      `${ELEVENLABS_API_URL}/v1/convai/conversation/get-signed-url?agent_id=${encodeURIComponent(agentId)}`,
+      { headers: { "xi-api-key": apiKey } },
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as { signed_url?: string };
+    return data.signed_url ?? null;
+  } catch {
+    return null;
+  }
 }

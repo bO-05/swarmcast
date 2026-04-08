@@ -30,6 +30,10 @@ export const analysesTable = pgTable("analyses", {
   narrativeFractures: jsonb("narrative_fractures"),
   montageUrl: text("montage_url"),
   errorMessage: text("error_message"),
+  agentId: text("agent_id"),
+  contentSuggestions: jsonb("content_suggestions"),
+  problemSegments: jsonb("problem_segments"),
+  montageTimeline: jsonb("montage_timeline"),
 });
 
 export const insertAnalysisSchema = createInsertSchema(analysesTable).omit({

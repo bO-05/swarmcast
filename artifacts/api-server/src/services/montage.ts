@@ -3,6 +3,26 @@ import path from "path";
 import { execFileSync } from "child_process";
 import { logger } from "../lib/logger";
 
+export function getAudioDurationSec(audioPath: string): number {
+  try {
+    const out = execFileSync(
+      "ffprobe",
+      [
+        "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        audioPath,
+      ],
+      { stdio: ["ignore", "pipe", "ignore"] },
+    )
+      .toString()
+      .trim();
+    return parseFloat(out) || 0;
+  } catch {
+    return 0;
+  }
+}
+
 export async function buildMontage(
   audioUrls: string[],
   analysisId: string,

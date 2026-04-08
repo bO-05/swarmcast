@@ -5,6 +5,7 @@
  * SwarmCast API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { AlignmentData } from "./alignmentData";
 
 export interface Persona {
   id: number;
@@ -61,4 +62,5 @@ export interface Persona {
   voiceScore?: number | null;
   /** @nullable */
   rank?: number | null;
+  alignmentData?: AlignmentData | null;
 }

@@ -6,6 +6,7 @@ import { analysesTable, personasTable, forecastPointsTable } from "@workspace/db
 import { eq, desc } from "drizzle-orm";
 import { runPipeline } from "../services/pipeline";
 import * as sseBroker from "../services/sse-broker";
+import { getConvAISignedUrl } from "../services/elevenlabs";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
@@ -112,6 +113,39 @@ router.get("/analyses/:id/stream", (req: Request, res: Response) => {
     clearInterval(keepAlive);
     sseBroker.unsubscribe(id, res);
   });
+});
+
+router.get("/analyses/:id/swarm-signed-url", async (req: Request, res: Response) => {
+  const { id } = req.params as { id: string };
+
+  try {
+    const [analysis] = await db
+      .select({ agentId: analysesTable.agentId })
+      .from(analysesTable)
+      .where(eq(analysesTable.id, id));
+
+    if (!analysis) {
+      res.status(404).json({ error: "Analysis not found" });
+      return;
+    }
+
+    if (!analysis.agentId) {
+      res.status(404).json({ error: "Agent not ready for this analysis" });
+      return;
+    }
+
+    const signedUrl = await getConvAISignedUrl(analysis.agentId);
+
+    if (!signedUrl) {
+      res.status(503).json({ error: "Failed to obtain ConvAI signed URL" });
+      return;
+    }
+
+    res.json({ signedUrl });
+  } catch (err) {
+    logger.error({ err }, "Failed to get swarm signed URL");
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

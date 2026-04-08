@@ -8,7 +8,9 @@
 import type { ExaResult } from "./exaResult";
 import type { FactCheckResult } from "./factCheckResult";
 import type { ForecastPoint } from "./forecastPoint";
+import type { MontageTimelineEntry } from "./montageTimelineEntry";
 import type { Persona } from "./persona";
+import type { ProblemSegment } from "./problemSegment";
 
 export interface FullAnalysis {
   id: string;
@@ -43,6 +45,14 @@ export interface FullAnalysis {
   montageUrl?: string | null;
   /** @nullable */
   errorMessage?: string | null;
+  /** @nullable */
+  agentId?: string | null;
+  /** @nullable */
+  contentSuggestions?: string[] | null;
+  /** @nullable */
+  problemSegments?: ProblemSegment[] | null;
+  /** @nullable */
+  montageTimeline?: MontageTimelineEntry[] | null;
   personas: Persona[];
   forecastPoints: ForecastPoint[];
 }

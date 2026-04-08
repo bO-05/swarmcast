@@ -6,6 +6,7 @@ import {
   doublePrecision,
   boolean,
   serial,
+  jsonb,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
@@ -42,6 +43,7 @@ export const personasTable = pgTable("personas", {
   hasAudio: boolean("has_audio").default(false),
   voiceScore: doublePrecision("voice_score"),
   rank: integer("rank"),
+  alignmentData: jsonb("alignment_data"),
 });
 
 export const insertPersonaSchema = createInsertSchema(personasTable).omit({

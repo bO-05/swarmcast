@@ -8,15 +8,28 @@ import { eq } from "drizzle-orm";
 import { extractKeywords, generatePersonas, generateSwarmSummary } from "./mistral";
 import { searchDiscourse } from "./exa";
 import { factCheckDocument } from "./perplexity";
-import { selectVoicesForPersonas, generatePersonaAudio } from "./elevenlabs";
-import { buildMontage } from "./montage";
+import {
+  selectVoicesForPersonas,
+  generatePersonaAudio,
+  designVoiceForPersona,
+  createPronunciationDictionary,
+  generateNarratorIntro,
+  getAlignmentData,
+  createSwarmAgent,
+} from "./elevenlabs";
+import { buildMontage, getAudioDurationSec } from "./montage";
 import { buildForecast } from "./forecast";
 import * as sseBroker from "./sse-broker";
 import { logger } from "../lib/logger";
 
-function selectTop8<T extends { id: number; finalSentiment: number | null; influenceWeight: number | null; wouldShare: boolean | null }>(
-  personas: T[],
-): T[] {
+const SILENCE_SEC = 0.4;
+
+function selectTop8<T extends {
+  id: number;
+  finalSentiment: number | null;
+  influenceWeight: number | null;
+  wouldShare: boolean | null;
+}>(personas: T[]): T[] {
   return personas
     .map((p) => ({
       persona: p,
@@ -56,12 +69,13 @@ export async function runPipeline(
 
     sseBroker.emit(analysisId, {
       type: "status",
-      message: "Searching web with Exa and fact-checking with Perplexity...",
+      message: "Searching web and fact-checking in parallel...",
     });
 
-    const [exaResults, factCheck] = await Promise.allSettled([
+    const [exaResults, factCheck, pronunciationDict] = await Promise.allSettled([
       searchDiscourse(keywords.keywords),
       factCheckDocument(text),
+      createPronunciationDictionary(`swarmcast-${analysisId.slice(0, 8)}`, keywords.keywords),
     ]);
 
     const exa =
@@ -71,11 +85,9 @@ export async function runPipeline(
     const factRaw =
       factCheck.status === "fulfilled"
         ? factCheck.value
-        : (logger.error(
-            { err: factCheck.reason },
-            "Perplexity fact-check failed",
-          ),
-          null);
+        : (logger.error({ err: factCheck.reason }, "Perplexity fact-check failed"), null);
+    const pronunciationDictLocator =
+      pronunciationDict.status === "fulfilled" ? pronunciationDict.value : null;
 
     const fact = factRaw
       ? {
@@ -140,28 +152,63 @@ export async function runPipeline(
       )
       .returning();
 
-    sseBroker.emit(analysisId, {
-      type: "personas_done",
-      data: insertedPersonas,
-    });
+    sseBroker.emit(analysisId, { type: "personas_done", data: insertedPersonas });
 
     sseBroker.emit(analysisId, {
       type: "status",
-      message: "Assigning unique ElevenLabs voices to 25 personas...",
+      message: "Assigning voices to all personas...",
     });
 
-    const voiceAssignments = selectVoicesForPersonas(
-      insertedPersonas.map((p) => ({
-        id: p.id,
-        gender: p.gender,
-        accent: p.accent,
-        age: p.age,
-      })),
+    const top8 = selectTop8(insertedPersonas);
+    const top8Ids = new Set(top8.map((p) => p.id));
+    const nonTop8 = insertedPersonas.filter((p) => !top8Ids.has(p.id));
+
+    const libraryVoiceAssignments = selectVoicesForPersonas(
+      nonTop8.map((p) => ({ id: p.id, gender: p.gender, accent: p.accent, age: p.age })),
     );
 
     await Promise.all(
-      insertedPersonas.map(async (p) => {
-        const voiceId = voiceAssignments.get(p.id);
+      nonTop8.map(async (p) => {
+        const voiceId = libraryVoiceAssignments.get(p.id);
+        if (voiceId) {
+          await db
+            .update(personasTable)
+            .set({ voiceId })
+            .where(eq(personasTable.id, p.id));
+        }
+      }),
+    );
+
+    sseBroker.emit(analysisId, {
+      type: "status",
+      message: "Designing unique voices for top 8 personas (Voice Design API)...",
+    });
+
+    await Promise.all(
+      top8.map(async (p) => {
+        let voiceId: string | null = null;
+        try {
+          voiceId = await designVoiceForPersona({
+            personaName: p.personaName ?? "Unknown",
+            gender: p.gender ?? "male",
+            age: p.age ?? 30,
+            country: p.country ?? "United States",
+            accent: p.accent ?? "American",
+            voiceStyle: p.voiceStyle ?? "calm and measured",
+            personaType: p.personaType ?? "neutral",
+            background: p.background ?? "",
+          });
+        } catch (err) {
+          logger.error({ err, personaId: p.id }, "Voice Design API failed");
+        }
+
+        if (!voiceId) {
+          const fallback = selectVoicesForPersonas([
+            { id: p.id, gender: p.gender, accent: p.accent, age: p.age },
+          ]);
+          voiceId = fallback.get(p.id) ?? null;
+        }
+
         if (voiceId) {
           await db
             .update(personasTable)
@@ -182,16 +229,39 @@ export async function runPipeline(
 
     sseBroker.emit(analysisId, {
       type: "status",
-      message: "Generating audio clips for top personas...",
+      message: "Generating narrator intro...",
     });
 
-    const personasWithVoice = updatedPersonas.filter((p) => p.voiceId);
-    const top8 = selectTop8(personasWithVoice);
+    const narratorIntro = await generateNarratorIntro(
+      title,
+      "mixed",
+      "medium",
+      analysisId,
+    ).catch((err) => {
+      logger.error({ err }, "Narrator intro failed");
+      return null;
+    });
+
+    sseBroker.emit(analysisId, {
+      type: "status",
+      message: "Generating audio clips with emotional voice tuning...",
+    });
+
+    const personasWithVoice = updatedPersonas.filter((p) => p.voiceId && top8Ids.has(p.id));
     const firstExaTitle = exa.length > 0 ? exa[0].title : "recent coverage";
 
-    const audioResults = await Promise.allSettled(
-      top8.map(async (p) => {
-        const audioUrl = await generatePersonaAudio(
+    interface ClipResult {
+      personaId: number;
+      personaName: string;
+      audioUrl: string;
+      audioPath: string;
+      script: string;
+      alignmentData: { words: Array<{ word: string; start: number; end: number }> } | null;
+    }
+
+    const clipResults = await Promise.allSettled(
+      personasWithVoice.map(async (p): Promise<ClipResult> => {
+        const audioResult = await generatePersonaAudio(
           {
             id: p.id,
             voiceId: p.voiceId!,
@@ -202,29 +272,51 @@ export async function runPipeline(
             finalOpinion: p.finalOpinion ?? "",
             keyConcern: p.keyConcern ?? "",
             finalSentiment: p.finalSentiment ?? 0,
+            influenceWeight: p.influenceWeight ?? 1.5,
+            beliefConfidence: p.beliefConfidence ?? 0.5,
+            mbti: p.mbti ?? "INTJ",
           },
           analysisId,
           firstExaTitle,
+          pronunciationDictLocator ?? undefined,
         );
+
+        const alignment = await getAlignmentData(audioResult.audioPath, audioResult.script).catch(
+          () => null,
+        );
+
         await db
           .update(personasTable)
-          .set({ audioUrl, hasAudio: true })
+          .set({
+            audioUrl: audioResult.audioUrl,
+            hasAudio: true,
+            alignmentData: alignment as unknown as Record<string, unknown>,
+          })
           .where(eq(personasTable.id, p.id));
+
         sseBroker.emit(analysisId, {
           type: "audio_progress",
-          data: { personaId: p.id, audioUrl },
+          data: { personaId: p.id, audioUrl: audioResult.audioUrl },
         });
-        return audioUrl;
+
+        return {
+          personaId: p.id,
+          personaName: p.personaName ?? "Unknown",
+          audioUrl: audioResult.audioUrl,
+          audioPath: audioResult.audioPath,
+          script: audioResult.script,
+          alignmentData: alignment,
+        };
       }),
     );
 
-    const audioUrls: string[] = [];
-    for (let i = 0; i < audioResults.length; i++) {
-      const result = audioResults[i];
+    const successfulClips: ClipResult[] = [];
+    for (let i = 0; i < clipResults.length; i++) {
+      const result = clipResults[i];
       if (result.status === "fulfilled") {
-        audioUrls.push(result.value);
+        successfulClips.push(result.value);
       } else {
-        logger.error({ err: result.reason, personaId: top8[i].id }, "TTS failed");
+        logger.error({ err: result.reason, personaId: personasWithVoice[i].id }, "TTS failed");
       }
     }
 
@@ -233,18 +325,60 @@ export async function runPipeline(
       message: "Building Focus Group Podcast montage...",
     });
 
+    const audioUrls: string[] = [];
+    if (narratorIntro) audioUrls.push(narratorIntro.audioUrl);
+    for (const clip of successfulClips) audioUrls.push(clip.audioUrl);
+
     let montageUrl: string | null = null;
+    let montageTimeline: Array<{
+      personaId: number | null;
+      personaName: string;
+      startSec: number;
+      endSec: number;
+      script: string;
+      words: Array<{ word: string; start: number; end: number }> | null;
+    }> = [];
+
     if (audioUrls.length > 0) {
       try {
         montageUrl = await buildMontage(audioUrls, analysisId);
+
+        let currentSec = 0;
+        if (narratorIntro) {
+          const dur = getAudioDurationSec(narratorIntro.audioPath);
+          montageTimeline.push({
+            personaId: null,
+            personaName: "SwarmCast Narrator",
+            startSec: currentSec,
+            endSec: currentSec + dur,
+            script: narratorIntro.script,
+            words: null,
+          });
+          currentSec += dur + SILENCE_SEC;
+        }
+
+        for (const clip of successfulClips) {
+          const dur = getAudioDurationSec(clip.audioPath);
+          montageTimeline.push({
+            personaId: clip.personaId,
+            personaName: clip.personaName,
+            startSec: currentSec,
+            endSec: currentSec + dur,
+            script: clip.script,
+            words: clip.alignmentData?.words ?? null,
+          });
+          currentSec += dur + SILENCE_SEC;
+        }
+
         await db
           .update(analysesTable)
-          .set({ montageUrl })
+          .set({
+            montageUrl,
+            montageTimeline: montageTimeline as unknown as Record<string, unknown>,
+          })
           .where(eq(analysesTable.id, analysisId));
-        sseBroker.emit(analysisId, {
-          type: "montage_done",
-          data: { montageUrl },
-        });
+
+        sseBroker.emit(analysisId, { type: "montage_done", data: { montageUrl } });
       } catch (err) {
         logger.error({ err }, "Montage build failed");
       }
@@ -252,7 +386,7 @@ export async function runPipeline(
 
     sseBroker.emit(analysisId, {
       type: "status",
-      message: "Generating swarm summary...",
+      message: "Generating swarm summary and prescriptive insights...",
     });
 
     const finalPersonas = await db
@@ -286,7 +420,15 @@ export async function runPipeline(
         would_share: p.wouldShare ?? false,
         platform_preference: p.platformPreference ?? "twitter",
       })),
+      text,
     );
+
+    const contentSuggestions = swarmRaw.content_suggestions ?? [];
+    const problemSegments = (swarmRaw.problem_segments ?? []).map((s) => ({
+      quote: s.quote,
+      triggeredBy: s.triggered_by,
+      reason: s.reason,
+    }));
 
     const initialSentiments = finalPersonas
       .map((p) => p.initialSentiment ?? 0)
@@ -312,7 +454,6 @@ export async function runPipeline(
     await db
       .update(analysesTable)
       .set({
-        status: "complete",
         avgSentiment: swarmRaw.avg_sentiment,
         dominantEmotion: swarmRaw.dominant_emotion,
         riskLevel: swarmRaw.risk_level,
@@ -322,12 +463,45 @@ export async function runPipeline(
         marketQuestion: swarmRaw.market_question,
         marketProbability: swarmRaw.market_probability,
         keyThemes: swarmRaw.key_themes as unknown as Record<string, unknown>,
-        narrativeFractures: swarmRaw.narrative_fractures as unknown as Record<
-          string,
-          unknown
-        >,
+        narrativeFractures: swarmRaw.narrative_fractures as unknown as Record<string, unknown>,
+        contentSuggestions: contentSuggestions as unknown as Record<string, unknown>,
+        problemSegments: problemSegments as unknown as Record<string, unknown>,
       })
       .where(eq(analysesTable.id, analysisId));
+
+    sseBroker.emit(analysisId, {
+      type: "status",
+      message: "Creating SwarmCast ConvAI agent...",
+    });
+
+    const agentId = await createSwarmAgent(
+      analysisId,
+      title,
+      swarmRaw.swarm_summary_paragraph,
+      finalPersonas.slice(0, 10).map((p) => ({
+        name: p.personaName ?? "Unknown",
+        type: p.personaType ?? "neutral",
+        country: p.country ?? "Unknown",
+        finalSentiment: p.finalSentiment ?? 0,
+        keyConcern: p.keyConcern ?? "",
+      })),
+    ).catch((err) => {
+      logger.error({ err }, "Agent creation failed");
+      return null;
+    });
+
+    if (agentId) {
+      await db
+        .update(analysesTable)
+        .set({ agentId, status: "complete" })
+        .where(eq(analysesTable.id, analysisId));
+      sseBroker.emit(analysisId, { type: "agent_ready", data: { agentId } });
+    } else {
+      await db
+        .update(analysesTable)
+        .set({ status: "complete" })
+        .where(eq(analysesTable.id, analysisId));
+    }
 
     const fullAnalysis = await db
       .select()

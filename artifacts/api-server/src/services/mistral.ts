@@ -34,6 +34,12 @@ export interface PersonaRaw {
   platform_preference: string;
 }
 
+export interface ProblemSegment {
+  quote: string;
+  triggered_by: string[];
+  reason: string;
+}
+
 export interface SwarmSummaryRaw {
   avg_sentiment: number;
   dominant_emotion: string;
@@ -45,6 +51,8 @@ export interface SwarmSummaryRaw {
   swarm_summary_paragraph: string;
   market_question: string;
   market_probability: number;
+  problem_segments: ProblemSegment[];
+  content_suggestions: string[];
 }
 
 export async function extractKeywords(
@@ -179,6 +187,7 @@ Generate exactly 25 diverse personas who would react to this announcement.`;
 
 export async function generateSwarmSummary(
   personas: PersonaRaw[],
+  originalText: string,
 ): Promise<SwarmSummaryRaw> {
   const personaSummaries = personas
     .slice(0, 15)
@@ -200,12 +209,28 @@ export async function generateSwarmSummary(
       messages: [
         {
           role: "system",
-          content: `You are a swarm analytics engine. Analyze the persona reactions and produce a swarm summary.
-Return JSON with: avg_sentiment (number -1 to 1), dominant_emotion (string), risk_level ("low"|"medium"|"high"), consensus_forming (boolean), key_themes (array of 3 strings), narrative_fractures (array of 2 strings), viral_potential (number 0-1), swarm_summary_paragraph (string, 2-3 sentences), market_question (yes/no style string), market_probability (number 0-1).`,
+          content: `You are a swarm analytics engine. Analyze the persona reactions and produce a comprehensive swarm summary.
+
+Return JSON with ALL of these fields:
+- avg_sentiment: number -1 to 1
+- dominant_emotion: string
+- risk_level: "low"|"medium"|"high"
+- consensus_forming: boolean
+- key_themes: array of 3 strings
+- narrative_fractures: array of 2 strings describing opposing views separated by " vs. "
+- viral_potential: number 0-1
+- swarm_summary_paragraph: string, 2-3 sentences summarising the swarm reaction
+- market_question: yes/no style prediction question
+- market_probability: number 0-1
+- problem_segments: array of 2-3 objects, each with:
+    - quote: exact 10-20 word excerpt from the original text that triggers negative or divisive reaction
+    - triggered_by: array of 2-4 persona names who reacted most negatively or cautiously to this segment
+    - reason: one sentence explaining why this segment triggers concern
+- content_suggestions: array of exactly 3 specific, actionable rewrite suggestions or additions that would measurably improve sentiment, reduce risk, or address the top concerns`,
         },
         {
           role: "user",
-          content: `Persona reactions:\n${personaSummaries}\n\nGenerate the swarm summary.`,
+          content: `Persona reactions:\n${personaSummaries}\n\nOriginal Text (first 2000 chars):\n${originalText.slice(0, 2000)}\n\nGenerate the full swarm analysis including problem segments and content suggestions.`,
         },
       ],
     }),
@@ -218,5 +243,11 @@ Return JSON with: avg_sentiment (number -1 to 1), dominant_emotion (string), ris
   const data = (await response.json()) as {
     choices: Array<{ message: { content: string } }>;
   };
-  return JSON.parse(data.choices[0].message.content) as SwarmSummaryRaw;
+  const parsed = JSON.parse(data.choices[0].message.content) as SwarmSummaryRaw;
+
+  return {
+    ...parsed,
+    problem_segments: parsed.problem_segments || [],
+    content_suggestions: parsed.content_suggestions || [],
+  };
 }

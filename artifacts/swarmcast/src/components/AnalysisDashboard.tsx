@@ -5,7 +5,7 @@ import { Progress } from "./ui/progress";
 import { HistorySidebar } from "./HistorySidebar";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Badge } from "./ui/badge";
-import { ShieldAlert, ShieldCheck, AlertTriangle, ExternalLink, MessageCircle, TrendingUp, AlertCircle, Play, Pause } from "lucide-react";
+import { ShieldAlert, ShieldCheck, AlertTriangle, ExternalLink, MessageCircle, TrendingUp, AlertCircle, Radio, Search, Users } from "lucide-react";
 import { SentimentForecastChart } from "./SentimentForecastChart";
 import { PersonaCard } from "./PersonaCard";
 import { useState } from "react";
@@ -265,6 +265,3 @@ export function AnalysisDashboard({ analysis, onSelectHistory }: AnalysisDashboa
     </div>
   );
 }
-
-// Just importing Radio icon since it was missing above
-import { Radio } from "lucide-react";

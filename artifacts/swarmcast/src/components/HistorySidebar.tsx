@@ -46,7 +46,7 @@ export function HistorySidebar({ onSelectHistory, currentId }: HistorySidebarPro
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
                   <span>{formatDistanceToNow(new Date(item.createdAt), { addSuffix: true })}</span>
                   
-                  {item.status === 'completed' && item.avgSentiment !== undefined ? (
+                  {item.status === 'complete' && item.avgSentiment !== undefined ? (
                     <div className={cn(
                       "px-1.5 py-0.5 rounded flex items-center gap-1 font-mono text-[10px]",
                       item.avgSentiment > 0.1 ? 'bg-emerald-500/10 text-emerald-400' :

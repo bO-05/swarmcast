@@ -72,7 +72,7 @@ export async function runPipeline(
       exaResults.status === "fulfilled"
         ? exaResults.value
         : (logger.error({ err: exaResults.reason }, "Exa search failed"), []);
-    const fact =
+    const factRaw =
       factCheck.status === "fulfilled"
         ? factCheck.value
         : (logger.error(
@@ -80,6 +80,14 @@ export async function runPipeline(
             "Perplexity fact-check failed",
           ),
           null);
+
+    const fact = factRaw
+      ? {
+          objectiveAssessment: factRaw.objective_assessment,
+          accuracyRating: factRaw.accuracy_rating,
+          factCheckItems: factRaw.fact_check_items,
+        }
+      : null;
 
     await db
       .update(analysesTable)
@@ -97,8 +105,8 @@ export async function runPipeline(
       message: "Generating 25 personas with Mistral...",
     });
 
-    const factSummary = fact
-      ? `Accuracy: ${fact.accuracy_rating}. ${fact.objective_assessment}`
+    const factSummary = factRaw
+      ? `Accuracy: ${factRaw.accuracy_rating}. ${factRaw.objective_assessment}`
       : "No fact-check available.";
 
     let personasRaw = await generatePersonas(title, text, exa, factSummary);

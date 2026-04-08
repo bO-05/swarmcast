@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { useListAnalyses, useGetAnalysis } from "@workspace/api-client-react";
+import { useState } from "react";
+import { useListAnalyses, useGetAnalysis, getGetAnalysisQueryKey } from "@workspace/api-client-react";
 import { InputForm } from "@/components/InputForm";
 import { PipelineFeed } from "@/components/PipelineFeed";
 import { AnalysisDashboard } from "@/components/AnalysisDashboard";
@@ -12,12 +12,12 @@ export default function Home() {
   const isProcessing = activeAnalysisId && pipelineState.status !== "idle" && pipelineState.status !== "complete" && pipelineState.status !== "error";
   
   const { data: fullAnalysis, isLoading: isLoadingAnalysis } = useGetAnalysis(
-    activeAnalysisId || "", 
-    { 
-      query: { 
-        enabled: !!activeAnalysisId && (pipelineState.status === "complete" || pipelineState.status === "error" || pipelineState.status === "idle"), 
-        queryKey: ["/api/analyses", activeAnalysisId] as any 
-      } 
+    activeAnalysisId || "",
+    {
+      query: {
+        enabled: !!activeAnalysisId && (pipelineState.status === "complete" || pipelineState.status === "error" || pipelineState.status === "idle"),
+        queryKey: getGetAnalysisQueryKey(activeAnalysisId || ""),
+      },
     }
   );
 

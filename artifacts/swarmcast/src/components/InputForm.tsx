@@ -138,7 +138,7 @@ export function InputForm({ onCreateComplete, onSelectHistory }: InputFormProps)
                     <h4 className="font-medium line-clamp-1 mb-2">{item.title}</h4>
                     <div className="flex items-center justify-between text-xs text-muted-foreground">
                       <span>{formatDistanceToNow(new Date(item.createdAt), { addSuffix: true })}</span>
-                      {item.status === 'completed' && item.avgSentiment !== undefined && (
+                      {item.status === 'complete' && item.avgSentiment !== undefined && (
                         <div className={`px-2 py-1 rounded-full flex items-center gap-1 ${
                           item.avgSentiment > 0.1 ? 'bg-emerald-500/10 text-emerald-400' :
                           item.avgSentiment < -0.1 ? 'bg-rose-500/10 text-rose-400' :
@@ -148,7 +148,7 @@ export function InputForm({ onCreateComplete, onSelectHistory }: InputFormProps)
                           {item.avgSentiment > 0 ? '+' : ''}{item.avgSentiment.toFixed(2)}
                         </div>
                       )}
-                      {item.status !== 'completed' && (
+                      {item.status !== 'complete' && (
                         <span className="text-primary px-2 py-1 bg-primary/10 rounded-full">{item.status}</span>
                       )}
                     </div>

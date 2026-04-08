@@ -59,16 +59,14 @@ export function useSsePipeline(analysisId: string | null) {
             setState((prev) => ({
               ...prev,
               status: "designing_voices",
-              voicesDesigned: event.data?.completed || 0,
-              voicesTotal: event.data?.total || 25,
+              voicesDesigned: prev.voicesDesigned + 1,
             }));
             break;
           case "audio_progress":
             setState((prev) => ({
               ...prev,
               status: "generating_audio",
-              audioGenerated: event.data?.completed || 0,
-              audioTotal: event.data?.total || 25,
+              audioGenerated: prev.audioGenerated + 1,
             }));
             break;
           case "montage_done":

@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import { logger } from "../lib/logger";
 
 export async function buildMontage(
@@ -25,9 +25,11 @@ export async function buildMontage(
 
   try {
     const silencePath = path.join(dir, "silence.mp3");
-    execSync(
-      `ffmpeg -y -f lavfi -i anullsrc=r=44100:cl=stereo -t 0.4 -acodec libmp3lame -q:a 4 "${silencePath}" 2>/dev/null`,
-    );
+    execFileSync("ffmpeg", [
+      "-y", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
+      "-t", "0.4", "-acodec", "libmp3lame", "-q:a", "4",
+      silencePath,
+    ], { stdio: "ignore" });
 
     const listFile = path.join(dir, "concat_list.txt");
     const lines: string[] = [];
@@ -37,9 +39,11 @@ export async function buildMontage(
     }
     fs.writeFileSync(listFile, lines.join("\n"));
 
-    execSync(
-      `ffmpeg -y -f concat -safe 0 -i "${listFile}" -acodec libmp3lame -q:a 4 "${montageOut}" 2>/dev/null`,
-    );
+    execFileSync("ffmpeg", [
+      "-y", "-f", "concat", "-safe", "0",
+      "-i", listFile, "-acodec", "libmp3lame", "-q:a", "4",
+      montageOut,
+    ], { stdio: "ignore" });
 
     fs.unlinkSync(silencePath);
     fs.unlinkSync(listFile);

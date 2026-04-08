@@ -3,11 +3,13 @@ import path from "path";
 import fs from "fs";
 import { db } from "@workspace/db";
 import { analysesTable, personasTable, forecastPointsTable } from "@workspace/db";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 import { runPipeline } from "../services/pipeline";
 import * as sseBroker from "../services/sse-broker";
 import { getConvAISignedUrl } from "../services/elevenlabs";
 import { logger } from "../lib/logger";
+
+const ELEVENLABS_API_URL = "https://api.elevenlabs.io";
 
 const router: IRouter = Router();
 
@@ -177,6 +179,73 @@ router.get("/static/audio/:analysisId/:file", (req: Request, res: Response) => {
   res.setHeader("Content-Type", "audio/mpeg");
   res.setHeader("Accept-Ranges", "bytes");
   fs.createReadStream(filePath).pipe(res);
+});
+
+router.post("/analyses/:id/persona-speak", async (req: Request, res: Response) => {
+  const { id } = req.params as { id: string };
+  const { text, voiceId } = req.body as { text?: string; voiceId?: string };
+
+  if (!text || !voiceId) {
+    res.status(400).json({ error: "text and voiceId required" });
+    return;
+  }
+
+  const apiKey = process.env.ELEVENLABS_API_KEY;
+  if (!apiKey) {
+    res.status(503).json({ error: "ElevenLabs not configured" });
+    return;
+  }
+
+  try {
+    const [persona] = await db
+      .select({ id: personasTable.id })
+      .from(personasTable)
+      .where(and(eq(personasTable.analysisId, id), eq(personasTable.voiceId, voiceId)))
+      .limit(1);
+
+    if (!persona) {
+      res.status(404).json({ error: "Persona not found for this analysis" });
+      return;
+    }
+
+    const ttsRes = await fetch(
+      `${ELEVENLABS_API_URL}/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "xi-api-key": apiKey,
+        },
+        body: JSON.stringify({
+          text,
+          model_id: "eleven_multilingual_v2",
+          voice_settings: { stability: 0.45, similarity_boost: 0.8, style: 0.35, use_speaker_boost: true },
+        }),
+      },
+    );
+
+    if (!ttsRes.ok || !ttsRes.body) {
+      res.status(503).json({ error: "TTS synthesis failed" });
+      return;
+    }
+
+    res.setHeader("Content-Type", "audio/mpeg");
+    res.setHeader("Cache-Control", "no-store");
+
+    const { Readable } = await import("stream");
+    const reader = ttsRes.body.getReader();
+    const nodeStream = new Readable({
+      async read() {
+        const { done, value } = await reader.read();
+        if (done) this.push(null);
+        else this.push(Buffer.from(value));
+      },
+    });
+    nodeStream.pipe(res);
+  } catch (err) {
+    logger.error({ err }, "persona-speak failed");
+    if (!res.headersSent) res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 export default router;

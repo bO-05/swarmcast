@@ -109,7 +109,16 @@ export function AnalysisDashboard({ analysis, onSelectHistory, autoPlayMontage =
                 )}
               </p>
               {agentId && (
-                <SwarmChat analysisId={id} agentId={agentId} title={title} />
+                <SwarmChat
+                  analysisId={id}
+                  agentId={agentId}
+                  title={title}
+                  personas={personas.map(p => ({
+                    id: p.id ?? 0,
+                    personaName: p.personaName ?? "",
+                    voiceId: p.voiceId ?? null,
+                  }))}
+                />
               )}
             </div>
           </motion.div>

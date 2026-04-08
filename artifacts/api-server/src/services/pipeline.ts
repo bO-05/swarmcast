@@ -3,6 +3,8 @@ import {
   analysesTable,
   personasTable,
   forecastPointsTable,
+  type Persona,
+  type Analysis,
 } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { extractKeywords, generatePersonas, generateSwarmSummary } from "./mistral";
@@ -161,7 +163,7 @@ export async function runPipeline(
     });
 
     const swarmRaw = await generateSwarmSummary(
-      insertedPersonas.map((p) => ({
+      insertedPersonas.map((p: Persona) => ({
         persona_name: p.personaName ?? "",
         persona_type: p.personaType ?? "",
         background: p.background ?? "",
@@ -197,8 +199,8 @@ export async function runPipeline(
     }));
 
     const initialSentiments = insertedPersonas
-      .map((p) => p.initialSentiment ?? 0)
-      .filter((s) => s !== null);
+      .map((p: Persona) => p.initialSentiment ?? 0)
+      .filter((s: number) => s !== null);
 
     const forecastPoints = buildForecast(
       initialSentiments,
@@ -240,16 +242,16 @@ export async function runPipeline(
       message: "Assigning voices to all personas...",
     });
 
-    const top8 = selectTop8(insertedPersonas);
+    const top8 = selectTop8(insertedPersonas) as Persona[];
     const top8Ids = new Set(top8.map((p) => p.id));
-    const nonTop8 = insertedPersonas.filter((p) => !top8Ids.has(p.id));
+    const nonTop8 = insertedPersonas.filter((p: Persona) => !top8Ids.has(p.id));
 
     const libraryVoiceAssignments = selectVoicesForPersonas(
-      nonTop8.map((p) => ({ id: p.id, gender: p.gender, accent: p.accent, age: p.age })),
+      nonTop8.map((p: Persona) => ({ id: p.id, gender: p.gender, accent: p.accent, age: p.age })),
     );
 
     await Promise.all(
-      nonTop8.map(async (p) => {
+      nonTop8.map(async (p: Persona) => {
         const voiceId = libraryVoiceAssignments.get(p.id);
         if (voiceId) {
           await db
@@ -343,7 +345,7 @@ export async function runPipeline(
       message: "Generating audio clips with emotional voice tuning...",
     });
 
-    const personasWithVoice = updatedPersonas.filter((p) => p.voiceId && top8Ids.has(p.id));
+    const personasWithVoice = updatedPersonas.filter((p: Persona) => p.voiceId && top8Ids.has(p.id));
     const firstExaTitle = exa.length > 0 ? exa[0].title : "recent coverage";
 
     interface ClipResult {
@@ -356,7 +358,7 @@ export async function runPipeline(
     }
 
     const clipResults = await Promise.allSettled(
-      personasWithVoice.map(async (p): Promise<ClipResult> => {
+      personasWithVoice.map(async (p: Persona): Promise<ClipResult> => {
         const audioResult = await generatePersonaAudio(
           {
             id: p.id,
@@ -426,8 +428,8 @@ export async function runPipeline(
     if (narratorIntro) audioUrls.push(narratorIntro.audioUrl);
     for (const clip of successfulClips) audioUrls.push(clip.audioUrl);
 
-    const personaSentimentMap = new Map(
-      insertedPersonas.map((p) => [p.id, p.finalSentiment ?? 0]),
+    const personaSentimentMap = new Map<number, number>(
+      insertedPersonas.map((p: Persona) => [p.id, (p.finalSentiment ?? 0) as number]),
     );
 
     let montageUrl: string | null = null;
@@ -512,7 +514,7 @@ export async function runPipeline(
       analysisId,
       title,
       swarmRaw.swarm_summary_paragraph,
-      insertedPersonas.map((p) => ({
+      insertedPersonas.map((p: Persona) => ({
         name: p.personaName ?? "Unknown",
         type: p.personaType ?? "neutral",
         country: p.country ?? "Unknown",
@@ -552,7 +554,7 @@ export async function runPipeline(
       .select()
       .from(analysesTable)
       .where(eq(analysesTable.id, analysisId))
-      .then((rows) => rows[0]);
+      .then((rows: Analysis[]) => rows[0]);
 
     const allPersonas = await db
       .select()

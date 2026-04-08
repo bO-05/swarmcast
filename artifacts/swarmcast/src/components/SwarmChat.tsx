@@ -30,7 +30,7 @@ export function SwarmChat({ analysisId, agentId, title }: SwarmChatProps) {
   const msgIdRef = useRef(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const { data: signedUrlData, isLoading: loadingUrl } = useGetSwarmSignedUrl(analysisId);
+  const { data: signedUrlData, isLoading: loadingUrl, isError: urlError } = useGetSwarmSignedUrl(analysisId);
 
   useEffect(() => {
     if (messagesEndRef.current) {
@@ -43,10 +43,14 @@ export function SwarmChat({ analysisId, agentId, title }: SwarmChatProps) {
 
   useEffect(() => {
     if (!open || status !== "idle") return;
+    if (urlError) {
+      setError("Could not reach the swarm agent. The agent may not be ready yet.");
+      return;
+    }
     const url = signedUrlRef.current;
     if (!url) return;
     startSession(url);
-  }, [open, signedUrlData?.signedUrl, status]);
+  }, [open, signedUrlData?.signedUrl, status, urlError]);
 
   useEffect(() => {
     return () => {

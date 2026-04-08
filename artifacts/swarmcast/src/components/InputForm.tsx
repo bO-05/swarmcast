@@ -185,15 +185,15 @@ export function InputForm({ onCreateComplete, onSelectHistory }: InputFormProps)
             </div>
 
             <p className="text-muted-foreground text-base leading-relaxed max-w-xs">
-              Paste any announcement and hear how the world reacts — before you hit publish. SwarmCast spins up 25 distinct AI personas, fact-checks your content against live web discourse, then uses <span className="text-foreground font-medium">ElevenLabs</span> to give each persona a unique human voice and assemble a listenable focus group podcast.
+              Paste any announcement and hear how the world reacts — before you hit publish. SwarmCast spins up 25 distinct AI personas, fact-checks against live web sources, then uses <span className="text-foreground font-medium">ElevenLabs</span> to design a unique voice for each persona, align a karaoke transcript, and assemble an immersive focus group podcast.
             </p>
 
             <div className="space-y-3 max-w-xs">
               {[
                 { step: "01", label: "Paste a doc, URL, or PDF" },
-                { step: "02", label: "25 AI personas analyze & react" },
-                { step: "03", label: "ElevenLabs voices each persona" },
-                { step: "04", label: "Listen to your Focus Group Podcast" },
+                { step: "02", label: "25 personas analyze & debate" },
+                { step: "03", label: "Voice Design API crafts unique voices" },
+                { step: "04", label: "Karaoke podcast + Talk to Your Swarm" },
               ].map(({ step, label }) => (
                 <div key={step} className="flex items-center gap-3">
                   <span className="text-[10px] font-mono text-primary/60 w-5 flex-shrink-0">{step}</span>

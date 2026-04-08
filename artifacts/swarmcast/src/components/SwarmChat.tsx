@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Conversation } from "@11labs/client";
 import { Mic, MicOff, X, Radio, Loader2, MessageSquare } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -24,17 +24,18 @@ export function SwarmChat({ analysisId, agentId, title }: SwarmChatProps) {
   const [status, setStatus] = useState<ConvStatus>("idle");
   const [mode, setMode] = useState<"speaking" | "listening">("listening");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [isMicMuted, setIsMicMuted] = useState(false);
+  const [isMicMuted, setIsMicMuted] = useState(true);
+  const [isPttActive, setIsPttActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const conversationRef = useRef<Conversation | null>(null);
   const msgIdRef = useRef(0);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatBoxRef = useRef<HTMLDivElement>(null);
 
   const { data: signedUrlData, isLoading: loadingUrl, isError: urlError } = useGetSwarmSignedUrl(analysisId);
 
   useEffect(() => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+    if (chatBoxRef.current) {
+      chatBoxRef.current.scrollTop = chatBoxRef.current.scrollHeight;
     }
   }, [messages]);
 
@@ -62,6 +63,8 @@ export function SwarmChat({ analysisId, agentId, title }: SwarmChatProps) {
     setStatus("connecting");
     setError(null);
     setMessages([]);
+    setIsMicMuted(true);
+    setIsPttActive(false);
 
     try {
       const conversation = await Conversation.startSession({
@@ -69,6 +72,8 @@ export function SwarmChat({ analysisId, agentId, title }: SwarmChatProps) {
         onConnect: () => setStatus("connected"),
         onDisconnect: () => {
           setStatus("idle");
+          setIsPttActive(false);
+          setIsMicMuted(true);
           conversationRef.current = null;
         },
         onMessage: ({ message, source }) => {
@@ -80,6 +85,7 @@ export function SwarmChat({ analysisId, agentId, title }: SwarmChatProps) {
         onError: (msg) => {
           setError(msg);
           setStatus("idle");
+          setIsPttActive(false);
         },
         onModeChange: ({ mode: m }) => setMode(m),
         onStatusChange: ({ status: s }) => {
@@ -88,6 +94,7 @@ export function SwarmChat({ analysisId, agentId, title }: SwarmChatProps) {
       });
 
       conversationRef.current = conversation;
+      conversation.setMicMuted(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to start conversation");
       setStatus("idle");
@@ -96,23 +103,34 @@ export function SwarmChat({ analysisId, agentId, title }: SwarmChatProps) {
 
   function endSession() {
     setStatus("disconnecting");
+    setIsPttActive(false);
+    setIsMicMuted(true);
     conversationRef.current?.endSession().catch(() => null);
     conversationRef.current = null;
     setStatus("idle");
   }
 
-  function toggleMic() {
+  const pttStart = useCallback(() => {
+    if (!conversationRef.current || status !== "connected") return;
+    conversationRef.current.setMicMuted(false);
+    setIsMicMuted(false);
+    setIsPttActive(true);
+  }, [status]);
+
+  const pttEnd = useCallback(() => {
     if (!conversationRef.current) return;
-    const newMuted = !isMicMuted;
-    conversationRef.current.setMicMuted(newMuted);
-    setIsMicMuted(newMuted);
-  }
+    conversationRef.current.setMicMuted(true);
+    setIsMicMuted(true);
+    setIsPttActive(false);
+  }, []);
 
   function handleOpen() {
     setOpen(true);
     setStatus("idle");
     setMessages([]);
     setError(null);
+    setIsMicMuted(true);
+    setIsPttActive(false);
   }
 
   function handleClose() {
@@ -122,6 +140,8 @@ export function SwarmChat({ analysisId, agentId, title }: SwarmChatProps) {
     setOpen(false);
     setStatus("idle");
   }
+
+  const isAiSpeaking = status === "connected" && mode === "speaking";
 
   if (!open) {
     return (
@@ -141,15 +161,18 @@ export function SwarmChat({ analysisId, agentId, title }: SwarmChatProps) {
       animate={{ opacity: 1, y: 0 }}
       className="rounded-xl border border-border/50 bg-card overflow-hidden"
     >
+      {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border/40 bg-card/60">
         <div className="flex items-center gap-2">
           <div
             className={cn(
               "w-2 h-2 rounded-full transition-colors",
-              status === "connected"
-                ? mode === "speaking"
-                  ? "bg-primary animate-pulse"
-                  : "bg-positive"
+              isAiSpeaking
+                ? "bg-primary animate-pulse"
+                : status === "connected" && isPttActive
+                ? "bg-positive animate-pulse"
+                : status === "connected"
+                ? "bg-positive"
                 : status === "connecting"
                 ? "bg-amber-400 animate-pulse"
                 : "bg-border",
@@ -158,39 +181,27 @@ export function SwarmChat({ analysisId, agentId, title }: SwarmChatProps) {
           <span className="text-xs font-mono text-muted-foreground">
             {status === "connecting"
               ? "Connecting to swarm..."
+              : isAiSpeaking
+              ? "Swarm is speaking..."
+              : status === "connected" && isPttActive
+              ? "Listening to you..."
               : status === "connected"
-              ? mode === "speaking"
-                ? "Swarm is speaking..."
-                : "Listening..."
+              ? "SwarmCast Collective — hold to speak"
               : status === "disconnecting"
               ? "Disconnecting..."
               : "SwarmCast Collective"}
           </span>
         </div>
-        <div className="flex items-center gap-2">
-          {status === "connected" && (
-            <button
-              onClick={toggleMic}
-              className={cn(
-                "flex items-center justify-center w-7 h-7 rounded-full border transition-all",
-                isMicMuted
-                  ? "border-negative/40 bg-negative/10 text-negative"
-                  : "border-border/40 text-muted-foreground hover:border-border hover:text-foreground",
-              )}
-            >
-              {isMicMuted ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
-            </button>
-          )}
-          <button
-            onClick={handleClose}
-            className="flex items-center justify-center w-7 h-7 rounded-full border border-border/40 text-muted-foreground hover:border-border hover:text-foreground transition-all"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
+        <button
+          onClick={handleClose}
+          className="flex items-center justify-center w-7 h-7 rounded-full border border-border/40 text-muted-foreground hover:border-border hover:text-foreground transition-all"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
       </div>
 
-      <div className="h-64 overflow-y-auto p-4 space-y-3">
+      {/* Messages */}
+      <div ref={chatBoxRef} className="h-56 overflow-y-auto p-4 space-y-3">
         {(status === "connecting" || loadingUrl) && messages.length === 0 && (
           <div className="flex items-center justify-center h-full">
             <div className="flex items-center gap-2 text-muted-foreground text-sm">
@@ -242,24 +253,53 @@ export function SwarmChat({ analysisId, agentId, title }: SwarmChatProps) {
         {status === "connected" && messages.length === 0 && !loadingUrl && (
           <div className="flex items-center justify-center h-full">
             <p className="text-xs text-muted-foreground text-center leading-relaxed">
-              The swarm is ready. Ask about "{title}" — try{" "}
-              <em>"Which persona worried most?"</em> or{" "}
-              <em>"Why might this go viral?"</em>
+              The swarm is ready. Hold the button below and ask about "{title}"
+              <br />
+              <em className="opacity-60">e.g. "Which persona worried most?" or "Why might this go viral?"</em>
             </p>
           </div>
         )}
-
-        <div ref={messagesEndRef} />
       </div>
 
+      {/* Push-to-talk bar */}
       {status === "connected" && (
-        <div className="px-4 py-3 border-t border-border/40 flex items-center justify-between gap-3">
-          <p className="text-[10px] font-mono text-muted-foreground">
-            Speak into your microphone to ask the swarm
-          </p>
+        <div className="px-4 py-3 border-t border-border/40 flex items-center gap-3">
+          <button
+            onMouseDown={pttStart}
+            onMouseUp={pttEnd}
+            onMouseLeave={pttEnd}
+            onTouchStart={(e) => { e.preventDefault(); pttStart(); }}
+            onTouchEnd={(e) => { e.preventDefault(); pttEnd(); }}
+            disabled={isAiSpeaking}
+            className={cn(
+              "flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg border font-medium text-sm transition-all select-none",
+              isPttActive
+                ? "bg-positive/15 border-positive/50 text-positive scale-[0.98]"
+                : isAiSpeaking
+                ? "bg-muted/40 border-border/30 text-muted-foreground/50 cursor-not-allowed"
+                : "bg-primary/8 border-primary/30 text-primary hover:bg-primary/12 hover:border-primary/50 active:scale-[0.98]",
+            )}
+          >
+            {isPttActive ? (
+              <>
+                <Mic className="w-4 h-4 animate-pulse" />
+                Listening — release to stop
+              </>
+            ) : isAiSpeaking ? (
+              <>
+                <Radio className="w-4 h-4 animate-pulse" />
+                Swarm is speaking...
+              </>
+            ) : (
+              <>
+                <MicOff className="w-4 h-4" />
+                Hold to speak
+              </>
+            )}
+          </button>
           <button
             onClick={endSession}
-            className="text-[10px] font-mono text-muted-foreground hover:text-negative transition-colors"
+            className="text-[10px] font-mono text-muted-foreground hover:text-negative transition-colors whitespace-nowrap"
           >
             End session
           </button>

@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "SwarmCast"
+version = "1.0.0"
+id = "artifacts/swarmcast"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 22780
+
+[services.development]
+run = "pnpm --filter @workspace/swarmcast run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/swarmcast", "run", "build" ]
+publicDir = "artifacts/swarmcast/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "22780"
+BASE_PATH = "/"

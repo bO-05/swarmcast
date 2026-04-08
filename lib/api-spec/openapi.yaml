@@ -3,13 +3,15 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: SwarmCast API specification
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: analyses
+    description: SwarmCast analysis operations
 paths:
   /healthz:
     get:
@@ -24,6 +26,83 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /analyses:
+    get:
+      operationId: listAnalyses
+      tags: [analyses]
+      summary: List recent analyses
+      description: Returns the last 10 analyses
+      responses:
+        "200":
+          description: List of analyses
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AnalysisSummary"
+    post:
+      operationId: createAnalysis
+      tags: [analyses]
+      summary: Create a new analysis
+      description: Starts an analysis pipeline for the provided document
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAnalysisBody"
+      responses:
+        "201":
+          description: Analysis started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateAnalysisResponse"
+        "400":
+          description: Invalid input
+
+  /analyses/{id}:
+    get:
+      operationId: getAnalysis
+      tags: [analyses]
+      summary: Get full analysis result
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Full analysis
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FullAnalysis"
+        "404":
+          description: Not found
+
+  /analyses/{id}/stream:
+    get:
+      operationId: streamAnalysis
+      tags: [analyses]
+      summary: SSE stream for analysis pipeline events
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: SSE event stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +113,243 @@ components:
       required:
         - status
 
+    CreateAnalysisBody:
+      type: object
+      properties:
+        title:
+          type: string
+        text:
+          type: string
+      required:
+        - title
+        - text
+
+    CreateAnalysisResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+      required:
+        - id
+        - status
+
+    AnalysisSummary:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+        avgSentiment:
+          type: ["number", "null"]
+        dominantEmotion:
+          type: ["string", "null"]
+        riskLevel:
+          type: ["string", "null"]
+      required:
+        - id
+        - title
+        - status
+        - createdAt
+
+    FactCheckItem:
+      type: object
+      properties:
+        claim:
+          type: string
+        status:
+          type: string
+        note:
+          type: string
+      required:
+        - claim
+        - status
+        - note
+
+    FactCheckResult:
+      type: object
+      properties:
+        objectiveAssessment:
+          type: string
+        accuracyRating:
+          type: string
+        factCheckItems:
+          type: array
+          items:
+            $ref: "#/components/schemas/FactCheckItem"
+      required:
+        - objectiveAssessment
+        - accuracyRating
+        - factCheckItems
+
+    ExaResult:
+      type: object
+      properties:
+        title:
+          type: string
+        url:
+          type: string
+        snippet:
+          type: string
+        publishedDate:
+          type: ["string", "null"]
+      required:
+        - title
+        - url
+        - snippet
+
+    Persona:
+      type: object
+      properties:
+        id:
+          type: integer
+        analysisId:
+          type: string
+        personaName:
+          type: ["string", "null"]
+        personaType:
+          type: ["string", "null"]
+        background:
+          type: ["string", "null"]
+        mbti:
+          type: ["string", "null"]
+        age:
+          type: ["integer", "null"]
+        country:
+          type: ["string", "null"]
+        accent:
+          type: ["string", "null"]
+        gender:
+          type: ["string", "null"]
+        voiceStyle:
+          type: ["string", "null"]
+        activityLevel:
+          type: ["number", "null"]
+        influenceWeight:
+          type: ["number", "null"]
+        sentimentBias:
+          type: ["number", "null"]
+        initialReaction:
+          type: ["string", "null"]
+        finalOpinion:
+          type: ["string", "null"]
+        initialSentiment:
+          type: ["number", "null"]
+        finalSentiment:
+          type: ["number", "null"]
+        beliefStance:
+          type: ["number", "null"]
+        beliefConfidence:
+          type: ["number", "null"]
+        keyConcern:
+          type: ["string", "null"]
+        wouldShare:
+          type: ["boolean", "null"]
+        platformPreference:
+          type: ["string", "null"]
+        voiceId:
+          type: ["string", "null"]
+        audioUrl:
+          type: ["string", "null"]
+        hasAudio:
+          type: ["boolean", "null"]
+        voiceScore:
+          type: ["number", "null"]
+        rank:
+          type: ["integer", "null"]
+      required:
+        - id
+        - analysisId
+
+    ForecastPoint:
+      type: object
+      properties:
+        id:
+          type: integer
+        analysisId:
+          type: string
+        hourOffset:
+          type: ["integer", "null"]
+        sentiment:
+          type: ["number", "null"]
+        confidenceLow:
+          type: ["number", "null"]
+        confidenceHigh:
+          type: ["number", "null"]
+        isForecast:
+          type: ["boolean", "null"]
+      required:
+        - id
+        - analysisId
+
+    FullAnalysis:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        inputText:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+        avgSentiment:
+          type: ["number", "null"]
+        dominantEmotion:
+          type: ["string", "null"]
+        riskLevel:
+          type: ["string", "null"]
+        viralPotential:
+          type: ["number", "null"]
+        consensusForming:
+          type: ["boolean", "null"]
+        swarmSummary:
+          type: ["string", "null"]
+        marketQuestion:
+          type: ["string", "null"]
+        marketProbability:
+          type: ["number", "null"]
+        factCheck:
+          oneOf:
+            - $ref: "#/components/schemas/FactCheckResult"
+            - type: "null"
+        exaResults:
+          type: ["array", "null"]
+          items:
+            $ref: "#/components/schemas/ExaResult"
+        keyThemes:
+          type: ["array", "null"]
+          items:
+            type: string
+        narrativeFractures:
+          type: ["array", "null"]
+          items:
+            type: string
+        montageUrl:
+          type: ["string", "null"]
+        errorMessage:
+          type: ["string", "null"]
+        personas:
+          type: array
+          items:
+            $ref: "#/components/schemas/Persona"
+        forecastPoints:
+          type: array
+          items:
+            $ref: "#/components/schemas/ForecastPoint"
+      required:
+        - id
+        - title
+        - inputText
+        - status
+        - createdAt
+        - personas
+        - forecastPoints

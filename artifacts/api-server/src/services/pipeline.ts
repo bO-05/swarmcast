@@ -189,9 +189,8 @@ export async function runPipeline(
     const top8 = selectTop8(personasWithVoice);
     const firstExaTitle = exa.length > 0 ? exa[0].title : "recent coverage";
 
-    const audioUrls: string[] = [];
-    for (const p of top8) {
-      try {
+    const audioResults = await Promise.allSettled(
+      top8.map(async (p) => {
         const audioUrl = await generatePersonaAudio(
           {
             id: p.id,
@@ -211,13 +210,21 @@ export async function runPipeline(
           .update(personasTable)
           .set({ audioUrl, hasAudio: true })
           .where(eq(personasTable.id, p.id));
-        audioUrls.push(audioUrl);
         sseBroker.emit(analysisId, {
           type: "audio_progress",
           data: { personaId: p.id, audioUrl },
         });
-      } catch (err) {
-        logger.error({ err, personaId: p.id }, "TTS failed");
+        return audioUrl;
+      }),
+    );
+
+    const audioUrls: string[] = [];
+    for (let i = 0; i < audioResults.length; i++) {
+      const result = audioResults[i];
+      if (result.status === "fulfilled") {
+        audioUrls.push(result.value);
+      } else {
+        logger.error({ err: result.reason, personaId: top8[i].id }, "TTS failed");
       }
     }
 

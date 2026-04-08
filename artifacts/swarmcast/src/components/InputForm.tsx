@@ -185,8 +185,22 @@ export function InputForm({ onCreateComplete, onSelectHistory }: InputFormProps)
             </div>
 
             <p className="text-muted-foreground text-base leading-relaxed max-w-xs">
-              Simulate public reaction before you send. SwarmCast generates 25 unique AI personas, crafts authentic audio, and builds a focus group podcast — in real time.
+              Paste any announcement and hear how the world reacts — before you hit publish. SwarmCast spins up 25 distinct AI personas, fact-checks your content against live web discourse, then uses <span className="text-foreground font-medium">ElevenLabs</span> to give each persona a unique human voice and assemble a listenable focus group podcast.
             </p>
+
+            <div className="space-y-3 max-w-xs">
+              {[
+                { step: "01", label: "Paste a doc, URL, or PDF" },
+                { step: "02", label: "25 AI personas analyze & react" },
+                { step: "03", label: "ElevenLabs voices each persona" },
+                { step: "04", label: "Listen to your Focus Group Podcast" },
+              ].map(({ step, label }) => (
+                <div key={step} className="flex items-center gap-3">
+                  <span className="text-[10px] font-mono text-primary/60 w-5 flex-shrink-0">{step}</span>
+                  <span className="text-sm text-muted-foreground">{label}</span>
+                </div>
+              ))}
+            </div>
 
             <div className="space-y-2">
               <p className="text-xs text-muted-foreground uppercase tracking-widest font-mono">Accepts</p>
@@ -200,14 +214,22 @@ export function InputForm({ onCreateComplete, onSelectHistory }: InputFormProps)
             </div>
           </div>
 
-          <div className="space-y-3">
-            <p className="text-xs text-muted-foreground uppercase tracking-widest font-mono">Powered by</p>
-            <div className="flex flex-wrap gap-2">
-              {["Mistral", "ElevenLabs", "Perplexity", "Exa"].map(name => (
-                <span key={name} className="text-xs font-mono text-muted-foreground border border-border/40 rounded px-2 py-1">
-                  {name}
-                </span>
-              ))}
+          <div className="space-y-4">
+            <div className="space-y-3">
+              <p className="text-xs text-muted-foreground uppercase tracking-widest font-mono">Powered by</p>
+              <div className="flex flex-wrap gap-2">
+                {["Mistral", "ElevenLabs", "Perplexity", "Exa"].map(name => (
+                  <span key={name} className={`text-xs font-mono border rounded px-2 py-1 ${name === "ElevenLabs" ? "text-primary border-primary/40 bg-primary/5" : "text-muted-foreground border-border/40"}`}>
+                    {name}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center gap-2 pt-1">
+              <span className="text-[10px] font-mono text-muted-foreground/50 uppercase tracking-widest">Built &amp; hosted on</span>
+              <span className="text-xs font-mono text-muted-foreground border border-border/40 rounded px-2 py-1 bg-card/60">
+                Replit
+              </span>
             </div>
           </div>
         </motion.div>

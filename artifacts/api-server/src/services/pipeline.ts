@@ -14,24 +14,20 @@ import { buildForecast } from "./forecast";
 import * as sseBroker from "./sse-broker";
 import { logger } from "../lib/logger";
 
-function selectTop8(
-  personas: Array<{
-    id: number;
-    finalSentiment: number | null;
-    influenceWeight: number | null;
-    wouldShare: boolean | null;
-  }>,
-): typeof personas {
+function selectTop8<T extends { id: number; finalSentiment: number | null; influenceWeight: number | null; wouldShare: boolean | null }>(
+  personas: T[],
+): T[] {
   return personas
     .map((p) => ({
-      ...p,
+      persona: p,
       voiceScore:
         Math.abs(p.finalSentiment ?? 0) *
         (p.influenceWeight ?? 1.0) *
         ((p.wouldShare ?? false) ? 1.3 : 1.0),
     }))
     .sort((a, b) => b.voiceScore - a.voiceScore)
-    .slice(0, 8);
+    .slice(0, 8)
+    .map((x) => x.persona);
 }
 
 export async function runPipeline(

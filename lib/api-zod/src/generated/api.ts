@@ -106,6 +106,7 @@ export const GetAnalysisResponse = zod.object({
         startSec: zod.number(),
         endSec: zod.number(),
         script: zod.string(),
+        sentiment: zod.number().nullish(),
         words: zod
           .array(
             zod.object({

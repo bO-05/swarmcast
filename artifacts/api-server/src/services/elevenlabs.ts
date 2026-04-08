@@ -309,8 +309,13 @@ ${lexemes}
 </lexicon>`;
 }
 
+const DIGIT_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
+
+function spellDigits(str: string): string {
+  return str.replace(/\d/g, (d) => " " + (DIGIT_WORDS[parseInt(d)] ?? d));
+}
+
 function extractAcronymAliases(keywords: string): Array<{ grapheme: string; alias: string }> {
-  const digitWords = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
   const terms = keywords.split(",").map((t) => t.trim());
   const results: Array<{ grapheme: string; alias: string }> = [];
   const seen = new Set<string>();
@@ -323,7 +328,7 @@ function extractAcronymAliases(keywords: string): Array<{ grapheme: string; alia
       const suffix = upper.match(/-(\d)$/);
       const letters = base.split("").join(" ");
       const alias = suffix
-        ? `${letters} ${digitWords[parseInt(suffix[1])] ?? suffix[1]}`
+        ? `${letters} ${DIGIT_WORDS[parseInt(suffix[1])] ?? suffix[1]}`
         : letters;
       results.push({ grapheme: upper, alias });
     }
@@ -332,12 +337,71 @@ function extractAcronymAliases(keywords: string): Array<{ grapheme: string; alia
   return results;
 }
 
+function extractProperNounAliases(
+  title: string,
+  content: string,
+): Array<{ grapheme: string; alias: string }> {
+  const results: Array<{ grapheme: string; alias: string }> = [];
+  const seen = new Set<string>();
+
+  const allText = `${title} ${content.slice(0, 2000)}`;
+  const tokens = allText.match(/[\w][\w'./-]*/g) ?? [];
+
+  for (const token of tokens) {
+    if (seen.has(token) || token.length < 2) continue;
+
+    const alphanumMixed = /^[A-Za-z]+\d+/.test(token) || /^\d+[A-Za-z]+/.test(token);
+    const camelCase = /[a-z][A-Z]/.test(token) || /[A-Z]{2,}[a-z]/.test(token);
+    const slashedVersion = /^v?\d+\.\d+/.test(token);
+
+    if (alphanumMixed || camelCase || slashedVersion) {
+      seen.add(token);
+
+      if (slashedVersion) {
+        const alias = token.replace(/\./g, " point ").replace(/\d/g, (d) => DIGIT_WORDS[parseInt(d)] ?? d);
+        results.push({ grapheme: token, alias: alias.trim() });
+        continue;
+      }
+
+      if (/^[A-Z0-9-]{2,}$/.test(token) && /\d/.test(token)) {
+        const letters = token.replace(/[A-Z]/g, (l) => l + " ").replace(/-/g, " ");
+        const alias = spellDigits(letters).replace(/\s+/g, " ").trim();
+        results.push({ grapheme: token, alias });
+        continue;
+      }
+
+      const camelExpanded = token
+        .replace(/([a-z])([A-Z])/g, "$1 $2")
+        .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2");
+      const alias = spellDigits(camelExpanded).replace(/\s+/g, " ").trim();
+      if (alias !== token) {
+        results.push({ grapheme: token, alias });
+      }
+    }
+  }
+
+  return results.slice(0, 20);
+}
+
 export async function createPronunciationDictionary(
   name: string,
   keywords: string,
+  title = "",
+  content = "",
 ): Promise<PronunciationDictLocator | null> {
   const apiKey = getApiKey();
-  const aliases = extractAcronymAliases(keywords);
+  const acronymAliases = extractAcronymAliases(keywords);
+  const properNounAliases = extractProperNounAliases(title, content);
+
+  const seenGraphemes = new Set<string>();
+  const aliases: Array<{ grapheme: string; alias: string }> = [];
+  for (const a of [...acronymAliases, ...properNounAliases]) {
+    if (!seenGraphemes.has(a.grapheme)) {
+      seenGraphemes.add(a.grapheme);
+      aliases.push(a);
+    }
+  }
+
   if (aliases.length === 0) return null;
 
   const plsXml = buildPlsXml(aliases);

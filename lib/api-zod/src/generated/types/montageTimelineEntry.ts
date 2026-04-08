@@ -15,5 +15,7 @@ export interface MontageTimelineEntry {
   endSec: number;
   script: string;
   /** @nullable */
+  sentiment?: number | null;
+  /** @nullable */
   words?: AlignmentWord[] | null;
 }

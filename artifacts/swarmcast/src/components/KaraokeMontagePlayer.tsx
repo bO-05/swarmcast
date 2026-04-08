@@ -15,6 +15,7 @@ interface TimelineEntry {
   startSec: number;
   endSec: number;
   script: string;
+  sentiment?: number | null;
   words?: AlignmentWord[] | null;
 }
 
@@ -158,14 +159,31 @@ export function KaraokeMontagePlayer({
             transition={{ duration: 0.25 }}
             className="p-4 rounded-lg border border-primary/20 bg-primary/5 min-h-[80px]"
           >
-            <div className="flex items-center gap-2 mb-2">
-              <span className="flex items-center gap-1.5 text-[10px] font-mono text-primary uppercase tracking-widest">
-                <Radio className="w-3 h-3 animate-pulse" />
-                Now speaking
-              </span>
-              <span className="text-[10px] font-mono text-muted-foreground">
-                {activeEntry.personaName}
-              </span>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <span className="flex items-center gap-1.5 text-[10px] font-mono text-primary uppercase tracking-widest">
+                  <Radio className="w-3 h-3 animate-pulse" />
+                  Now speaking
+                </span>
+                <span className="text-[10px] font-mono text-muted-foreground">
+                  {activeEntry.personaName}
+                </span>
+              </div>
+              {activeEntry.sentiment != null && (
+                <span
+                  className={cn(
+                    "text-[9px] font-mono px-1.5 py-0.5 rounded border tabular-nums",
+                    activeEntry.sentiment > 0.2
+                      ? "text-positive border-positive/30 bg-[color-mix(in_oklch,var(--positive)_8%,transparent)]"
+                      : activeEntry.sentiment < -0.2
+                      ? "text-negative border-negative/30 bg-[color-mix(in_oklch,var(--negative)_8%,transparent)]"
+                      : "text-amber-400 border-amber-500/30 bg-amber-500/8",
+                  )}
+                >
+                  {activeEntry.sentiment > 0 ? "+" : ""}
+                  {activeEntry.sentiment.toFixed(2)}
+                </span>
+              )}
             </div>
 
             <div className="text-sm leading-relaxed">

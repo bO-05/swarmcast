@@ -362,6 +362,8 @@ components:
           type: number
         script:
           type: string
+        sentiment:
+          type: ["number", "null"]
         words:
           type: ["array", "null"]
           items:

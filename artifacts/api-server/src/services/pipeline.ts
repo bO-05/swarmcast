@@ -76,7 +76,7 @@ export async function runPipeline(
     const [exaResults, factCheck, pronunciationDict] = await Promise.allSettled([
       searchDiscourse(keywords.keywords),
       factCheckDocument(text),
-      createPronunciationDictionary(`swarmcast-${analysisId.slice(0, 8)}`, keywords.keywords),
+      createPronunciationDictionary(`swarmcast-${analysisId.slice(0, 8)}`, keywords.keywords, title, text),
     ]);
 
     const exa =
@@ -157,6 +157,86 @@ export async function runPipeline(
 
     sseBroker.emit(analysisId, {
       type: "status",
+      message: "Generating swarm summary and prescriptive insights...",
+    });
+
+    const swarmRaw = await generateSwarmSummary(
+      insertedPersonas.map((p) => ({
+        persona_name: p.personaName ?? "",
+        persona_type: p.personaType ?? "",
+        background: p.background ?? "",
+        mbti: p.mbti ?? "",
+        age: p.age ?? 30,
+        country: p.country ?? "",
+        accent: p.accent ?? "",
+        gender: p.gender ?? "",
+        voice_style: p.voiceStyle ?? "",
+        activity_level: p.activityLevel ?? 0.5,
+        influence_weight: p.influenceWeight ?? 1.0,
+        sentiment_bias: p.sentimentBias ?? 0,
+        initial_reaction: p.initialReaction ?? "",
+        final_opinion: p.finalOpinion ?? "",
+        initial_sentiment: p.initialSentiment ?? 0,
+        final_sentiment: p.finalSentiment ?? 0,
+        belief_state: {
+          stance: p.beliefStance ?? 0,
+          confidence: p.beliefConfidence ?? 0.5,
+        },
+        key_concern: p.keyConcern ?? "",
+        would_share: p.wouldShare ?? false,
+        platform_preference: p.platformPreference ?? "twitter",
+      })),
+      text,
+    );
+
+    const contentSuggestions = swarmRaw.content_suggestions ?? [];
+    const problemSegments = (swarmRaw.problem_segments ?? []).map((s) => ({
+      quote: s.quote,
+      triggeredBy: s.triggered_by,
+      reason: s.reason,
+    }));
+
+    const initialSentiments = insertedPersonas
+      .map((p) => p.initialSentiment ?? 0)
+      .filter((s) => s !== null);
+
+    const forecastPoints = buildForecast(
+      initialSentiments,
+      swarmRaw.avg_sentiment,
+      swarmRaw.viral_potential,
+    );
+
+    await db.insert(forecastPointsTable).values(
+      forecastPoints.map((fp) => ({
+        analysisId,
+        hourOffset: fp.hourOffset,
+        sentiment: fp.sentiment,
+        confidenceLow: fp.confidenceLow,
+        confidenceHigh: fp.confidenceHigh,
+        isForecast: fp.isForecast,
+      })),
+    );
+
+    await db
+      .update(analysesTable)
+      .set({
+        avgSentiment: swarmRaw.avg_sentiment,
+        dominantEmotion: swarmRaw.dominant_emotion,
+        riskLevel: swarmRaw.risk_level,
+        viralPotential: swarmRaw.viral_potential,
+        consensusForming: swarmRaw.consensus_forming,
+        swarmSummary: swarmRaw.swarm_summary_paragraph,
+        marketQuestion: swarmRaw.market_question,
+        marketProbability: swarmRaw.market_probability,
+        keyThemes: swarmRaw.key_themes as unknown as Record<string, unknown>,
+        narrativeFractures: swarmRaw.narrative_fractures as unknown as Record<string, unknown>,
+        contentSuggestions: contentSuggestions as unknown as Record<string, unknown>,
+        problemSegments: problemSegments as unknown as Record<string, unknown>,
+      })
+      .where(eq(analysesTable.id, analysisId));
+
+    sseBroker.emit(analysisId, {
+      type: "status",
       message: "Assigning voices to all personas...",
     });
 
@@ -230,18 +310,33 @@ export async function runPipeline(
 
     sseBroker.emit(analysisId, {
       type: "status",
-      message: "Generating narrator intro...",
+      message: "Generating narrator intro and mood-adaptive theme...",
     });
 
-    const narratorIntro = await generateNarratorIntro(
-      title,
-      "mixed",
-      "medium",
-      analysisId,
-    ).catch((err) => {
-      logger.error({ err }, "Narrator intro failed");
-      return null;
-    });
+    const [narratorIntroResult, montageThemeResult] = await Promise.allSettled([
+      generateNarratorIntro(
+        title,
+        swarmRaw.dominant_emotion ?? "mixed",
+        swarmRaw.risk_level ?? "medium",
+        analysisId,
+      ),
+      generateMontageTheme(
+        swarmRaw.avg_sentiment ?? 0,
+        swarmRaw.risk_level ?? "medium",
+        swarmRaw.viral_potential ?? 0,
+        analysisId,
+      ),
+    ]);
+
+    const narratorIntro =
+      narratorIntroResult.status === "fulfilled"
+        ? narratorIntroResult.value
+        : (logger.error({ err: narratorIntroResult.reason }, "Narrator intro failed"), null);
+
+    const montageTheme =
+      montageThemeResult.status === "fulfilled"
+        ? montageThemeResult.value
+        : (logger.error({ err: montageThemeResult.reason }, "Montage theme failed"), null);
 
     sseBroker.emit(analysisId, {
       type: "status",
@@ -327,8 +422,13 @@ export async function runPipeline(
     });
 
     const audioUrls: string[] = [];
+    if (montageTheme) audioUrls.push(montageTheme.audioUrl);
     if (narratorIntro) audioUrls.push(narratorIntro.audioUrl);
     for (const clip of successfulClips) audioUrls.push(clip.audioUrl);
+
+    const personaSentimentMap = new Map(
+      insertedPersonas.map((p) => [p.id, p.finalSentiment ?? 0]),
+    );
 
     let montageUrl: string | null = null;
     let montageTimeline: Array<{
@@ -337,6 +437,7 @@ export async function runPipeline(
       startSec: number;
       endSec: number;
       script: string;
+      sentiment: number | null;
       words: Array<{ word: string; start: number; end: number }> | null;
     }> = [];
 
@@ -345,6 +446,21 @@ export async function runPipeline(
         montageUrl = await buildMontage(audioUrls, analysisId);
 
         let currentSec = 0;
+
+        if (montageTheme) {
+          const dur = getAudioDurationSec(montageTheme.audioPath);
+          montageTimeline.push({
+            personaId: null,
+            personaName: "Swarm Theme",
+            startSec: currentSec,
+            endSec: currentSec + dur,
+            script: "",
+            sentiment: swarmRaw.avg_sentiment ?? null,
+            words: null,
+          });
+          currentSec += dur + SILENCE_SEC;
+        }
+
         if (narratorIntro) {
           const dur = getAudioDurationSec(narratorIntro.audioPath);
           montageTimeline.push({
@@ -353,6 +469,7 @@ export async function runPipeline(
             startSec: currentSec,
             endSec: currentSec + dur,
             script: narratorIntro.script,
+            sentiment: null,
             words: null,
           });
           currentSec += dur + SILENCE_SEC;
@@ -366,6 +483,7 @@ export async function runPipeline(
             startSec: currentSec,
             endSec: currentSec + dur,
             script: clip.script,
+            sentiment: personaSentimentMap.get(clip.personaId) ?? null,
             words: clip.alignmentData?.words ?? null,
           });
           currentSec += dur + SILENCE_SEC;
@@ -387,98 +505,6 @@ export async function runPipeline(
 
     sseBroker.emit(analysisId, {
       type: "status",
-      message: "Generating swarm summary and prescriptive insights...",
-    });
-
-    const finalPersonas = await db
-      .select()
-      .from(personasTable)
-      .where(eq(personasTable.analysisId, analysisId));
-
-    const swarmRaw = await generateSwarmSummary(
-      finalPersonas.map((p) => ({
-        persona_name: p.personaName ?? "",
-        persona_type: p.personaType ?? "",
-        background: p.background ?? "",
-        mbti: p.mbti ?? "",
-        age: p.age ?? 30,
-        country: p.country ?? "",
-        accent: p.accent ?? "",
-        gender: p.gender ?? "",
-        voice_style: p.voiceStyle ?? "",
-        activity_level: p.activityLevel ?? 0.5,
-        influence_weight: p.influenceWeight ?? 1.0,
-        sentiment_bias: p.sentimentBias ?? 0,
-        initial_reaction: p.initialReaction ?? "",
-        final_opinion: p.finalOpinion ?? "",
-        initial_sentiment: p.initialSentiment ?? 0,
-        final_sentiment: p.finalSentiment ?? 0,
-        belief_state: {
-          stance: p.beliefStance ?? 0,
-          confidence: p.beliefConfidence ?? 0.5,
-        },
-        key_concern: p.keyConcern ?? "",
-        would_share: p.wouldShare ?? false,
-        platform_preference: p.platformPreference ?? "twitter",
-      })),
-      text,
-    );
-
-    const contentSuggestions = swarmRaw.content_suggestions ?? [];
-    const problemSegments = (swarmRaw.problem_segments ?? []).map((s) => ({
-      quote: s.quote,
-      triggeredBy: s.triggered_by,
-      reason: s.reason,
-    }));
-
-    const initialSentiments = finalPersonas
-      .map((p) => p.initialSentiment ?? 0)
-      .filter((s) => s !== null);
-
-    const forecastPoints = buildForecast(
-      initialSentiments,
-      swarmRaw.avg_sentiment,
-      swarmRaw.viral_potential,
-    );
-
-    await db.insert(forecastPointsTable).values(
-      forecastPoints.map((fp) => ({
-        analysisId,
-        hourOffset: fp.hourOffset,
-        sentiment: fp.sentiment,
-        confidenceLow: fp.confidenceLow,
-        confidenceHigh: fp.confidenceHigh,
-        isForecast: fp.isForecast,
-      })),
-    );
-
-    await db
-      .update(analysesTable)
-      .set({
-        avgSentiment: swarmRaw.avg_sentiment,
-        dominantEmotion: swarmRaw.dominant_emotion,
-        riskLevel: swarmRaw.risk_level,
-        viralPotential: swarmRaw.viral_potential,
-        consensusForming: swarmRaw.consensus_forming,
-        swarmSummary: swarmRaw.swarm_summary_paragraph,
-        marketQuestion: swarmRaw.market_question,
-        marketProbability: swarmRaw.market_probability,
-        keyThemes: swarmRaw.key_themes as unknown as Record<string, unknown>,
-        narrativeFractures: swarmRaw.narrative_fractures as unknown as Record<string, unknown>,
-        contentSuggestions: contentSuggestions as unknown as Record<string, unknown>,
-        problemSegments: problemSegments as unknown as Record<string, unknown>,
-      })
-      .where(eq(analysesTable.id, analysisId));
-
-    generateMontageTheme(
-      swarmRaw.avg_sentiment ?? 0,
-      swarmRaw.risk_level ?? "medium",
-      swarmRaw.viral_potential ?? 0,
-      analysisId,
-    ).catch((err) => logger.error({ err }, "Montage theme generation failed"));
-
-    sseBroker.emit(analysisId, {
-      type: "status",
       message: "Creating SwarmCast ConvAI agent...",
     });
 
@@ -486,7 +512,7 @@ export async function runPipeline(
       analysisId,
       title,
       swarmRaw.swarm_summary_paragraph,
-      finalPersonas.map((p) => ({
+      insertedPersonas.map((p) => ({
         name: p.personaName ?? "Unknown",
         type: p.personaType ?? "neutral",
         country: p.country ?? "Unknown",

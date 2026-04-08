@@ -1,6 +1,6 @@
 import type { ElementType } from "react";
 import { PipelineState } from "@/hooks/use-sse-pipeline";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle2, Circle, Loader2, FileText, Search, ShieldCheck, Users, Mic, AudioLines, Radio } from "lucide-react";
 
 interface PipelineFeedProps {
@@ -8,91 +8,121 @@ interface PipelineFeedProps {
   analysisId: string;
 }
 
-const steps: Array<{ id: string; label: string; icon: ElementType; showProgress?: boolean }> = [
-  { id: "extracting", label: "Extracting topics with Mistral", icon: FileText },
-  { id: "searching", label: "Searching web & fact-checking with Perplexity", icon: Search },
-  { id: "generating_personas", label: "Generating 25 personas with Mistral", icon: Users },
-  { id: "designing_voices", label: "Designing unique voices with ElevenLabs", icon: Mic, showProgress: true },
-  { id: "generating_audio", label: "Generating audio clips", icon: AudioLines, showProgress: true },
-  { id: "building_montage", label: "Building Focus Group Podcast", icon: Radio },
-  { id: "summarizing", label: "Generating swarm summary & forecast", icon: ShieldCheck },
+const steps: Array<{ id: string; label: string; icon: ElementType; detail?: string; showProgress?: boolean }> = [
+  { id: "extracting",         label: "Extracting topics",         detail: "Mistral AI",      icon: FileText },
+  { id: "searching",          label: "Web search & fact-check",   detail: "Exa + Perplexity", icon: Search },
+  { id: "generating_personas",label: "Building 25 personas",      detail: "Mistral AI",      icon: Users },
+  { id: "designing_voices",   label: "Designing voices",          detail: "ElevenLabs",      icon: Mic, showProgress: true },
+  { id: "generating_audio",   label: "Recording clips",           detail: "ElevenLabs TTS",  icon: AudioLines, showProgress: true },
+  { id: "building_montage",   label: "Assembling podcast",        detail: "ffmpeg",          icon: Radio },
+  { id: "summarizing",        label: "Generating forecast",       detail: "Mistral AI",      icon: ShieldCheck },
 ];
 
 export function PipelineFeed({ state, analysisId }: PipelineFeedProps) {
+  const currentIndex = steps.findIndex(s => s.id === state.status);
+
   const getStepStatus = (stepId: string) => {
     const stepIndex = steps.findIndex(s => s.id === stepId);
-    const currentIndex = steps.findIndex(s => s.id === state.status);
-    
     if (state.status === "complete") return "done";
-    if (state.status === "error") return currentIndex === stepIndex ? "error" : "pending";
-    
+    if (state.status === "error") return currentIndex === stepIndex ? "error" : stepIndex < currentIndex ? "done" : "pending";
     if (currentIndex > stepIndex) return "done";
     if (currentIndex === stepIndex) return "active";
     return "pending";
   };
 
   return (
-    <div className="flex-1 flex flex-col items-center justify-center p-4">
-      <div className="w-full max-w-2xl bg-card/30 backdrop-blur-md border border-primary/20 rounded-xl p-8 shadow-[0_0_50px_rgba(59,130,246,0.1)]">
-        <div className="text-center mb-8">
-          <h2 className="text-2xl font-bold tracking-tight mb-2">Initializing SwarmCast</h2>
-          <p className="text-muted-foreground text-sm font-mono tracking-wider uppercase">Session ID: {analysisId.split('-')[0]}</p>
+    <div className="flex-1 flex flex-col items-center justify-center px-4 py-16">
+      <div className="w-full max-w-lg space-y-1">
+
+        {/* Header */}
+        <div className="mb-10">
+          <p className="text-xs font-mono text-muted-foreground uppercase tracking-widest mb-3">
+            Session {analysisId.split("-")[0]}
+          </p>
+          <h2 className="font-display text-3xl text-foreground">
+            {state.status === "error" ? "Pipeline failed" : "Swarm assembling…"}
+          </h2>
+          {state.currentMessage && (
+            <p className="text-sm text-muted-foreground mt-2">{state.currentMessage}</p>
+          )}
         </div>
 
-        <div className="space-y-6">
+        {/* Steps */}
+        <div className="space-y-0">
           {steps.map((step, idx) => {
             const status = getStepStatus(step.id);
             const Icon = step.icon;
-            
+            const isActive = status === "active";
+            const isDone = status === "done";
+            const isPending = status === "pending";
+
             return (
-              <motion.div 
+              <motion.div
                 key={step.id}
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: status === "pending" ? 0.4 : 1, x: 0 }}
-                transition={{ delay: idx * 0.1 }}
-                className={`flex items-center gap-4 ${status === "active" ? "text-primary" : status === "done" ? "text-emerald-400" : "text-muted-foreground"}`}
+                initial={{ opacity: 0, x: -8 }}
+                animate={{
+                  opacity: isPending ? 0.35 : 1,
+                  x: 0,
+                }}
+                transition={{ delay: idx * 0.06, duration: 0.3 }}
+                className="flex items-start gap-4 py-3 border-b border-border/30 last:border-0"
               >
-                <div className="relative flex-shrink-0">
-                  {status === "done" ? (
-                    <CheckCircle2 className="w-6 h-6" />
-                  ) : status === "active" ? (
-                    <Loader2 className="w-6 h-6 animate-spin" />
+                {/* Status icon */}
+                <div className="flex-shrink-0 w-5 h-5 mt-0.5 relative">
+                  {isDone ? (
+                    <CheckCircle2 className="w-5 h-5 text-positive" />
+                  ) : isActive ? (
+                    <>
+                      <Loader2 className="w-5 h-5 text-primary animate-spin" />
+                      <span className="absolute inset-0 rounded-full bg-primary/10 animate-ping" />
+                    </>
+                  ) : status === "error" ? (
+                    <Circle className="w-5 h-5 text-negative" />
                   ) : (
-                    <Circle className="w-6 h-6" />
-                  )}
-                  {status === "active" && (
-                    <div className="absolute inset-0 bg-primary/20 rounded-full animate-ping"></div>
+                    <Circle className="w-5 h-5 text-border" />
                   )}
                 </div>
-                
-                <div className="flex items-center justify-center w-8 h-8 rounded bg-background/50 border border-border/50">
-                  <Icon className="w-4 h-4" />
-                </div>
-                
-                <div className="flex-1">
-                  <div className="font-medium text-lg">{step.label}</div>
-                  
-                  {step.showProgress && status === "active" && step.id === "designing_voices" && (
-                    <div className="mt-2 flex items-center gap-3 text-sm">
-                      <div className="flex-1 h-1.5 bg-background rounded-full overflow-hidden">
-                        <div 
-                          className="h-full bg-primary transition-all duration-300 ease-out" 
+
+                {/* Content */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className={`text-sm font-medium ${isDone ? "text-foreground/60" : isActive ? "text-foreground" : "text-foreground/40"}`}>
+                      {step.label}
+                    </span>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <Icon className={`w-3.5 h-3.5 ${isActive ? "text-primary" : isDone ? "text-muted-foreground" : "text-border"}`} />
+                      <span className="text-[10px] font-mono text-muted-foreground/60">
+                        {step.detail}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Voice progress */}
+                  {step.showProgress && isActive && step.id === "designing_voices" && (
+                    <div className="mt-2 flex items-center gap-3">
+                      <div className="flex-1 h-0.5 bg-border rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-primary transition-all duration-300 ease-out"
                           style={{ width: `${(state.voicesDesigned / state.voicesTotal) * 100}%` }}
                         />
                       </div>
-                      <span className="font-mono text-xs">{state.voicesDesigned} / {state.voicesTotal}</span>
+                      <span className="text-[10px] font-mono text-muted-foreground w-12 text-right">
+                        {state.voicesDesigned}/{state.voicesTotal}
+                      </span>
                     </div>
                   )}
-                  
-                  {step.showProgress && status === "active" && step.id === "generating_audio" && (
-                    <div className="mt-2 flex items-center gap-3 text-sm">
-                      <div className="flex-1 h-1.5 bg-background rounded-full overflow-hidden">
-                        <div 
-                          className="h-full bg-primary transition-all duration-300 ease-out" 
+
+                  {step.showProgress && isActive && step.id === "generating_audio" && (
+                    <div className="mt-2 flex items-center gap-3">
+                      <div className="flex-1 h-0.5 bg-border rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-primary transition-all duration-300 ease-out"
                           style={{ width: `${(state.audioGenerated / state.audioTotal) * 100}%` }}
                         />
                       </div>
-                      <span className="font-mono text-xs">{state.audioGenerated} / {state.audioTotal}</span>
+                      <span className="text-[10px] font-mono text-muted-foreground w-12 text-right">
+                        {state.audioGenerated}/{state.audioTotal}
+                      </span>
                     </div>
                   )}
                 </div>
@@ -100,13 +130,19 @@ export function PipelineFeed({ state, analysisId }: PipelineFeedProps) {
             );
           })}
         </div>
-        
-        {state.error && (
-          <div className="mt-8 p-4 bg-rose-500/10 border border-rose-500/20 text-rose-400 rounded-lg text-center">
-            <h4 className="font-bold mb-1">Pipeline Error</h4>
-            <p className="text-sm">{state.error}</p>
-          </div>
-        )}
+
+        <AnimatePresence>
+          {state.error && (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className="mt-8 p-4 bg-destructive/10 border border-destructive/20 text-destructive rounded-md text-sm"
+            >
+              {state.error}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );

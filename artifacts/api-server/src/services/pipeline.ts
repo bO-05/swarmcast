@@ -8,7 +8,7 @@ import { eq } from "drizzle-orm";
 import { extractKeywords, generatePersonas, generateSwarmSummary } from "./mistral";
 import { searchDiscourse } from "./exa";
 import { factCheckDocument } from "./perplexity";
-import { createPersonaVoice, generatePersonaAudio } from "./elevenlabs";
+import { selectVoicesForPersonas, generatePersonaAudio } from "./elevenlabs";
 import { buildMontage } from "./montage";
 import { buildForecast } from "./forecast";
 import * as sseBroker from "./sse-broker";
@@ -147,43 +147,33 @@ export async function runPipeline(
 
     sseBroker.emit(analysisId, {
       type: "status",
-      message: "Designing 25 unique voices with ElevenLabs Voice Design...",
+      message: "Assigning unique ElevenLabs voices to 25 personas...",
     });
 
-    const batchSize = 5;
-    for (let i = 0; i < insertedPersonas.length; i += batchSize) {
-      const batch = insertedPersonas.slice(i, i + batchSize);
-      const results = await Promise.allSettled(
-        batch.map((p) =>
-          createPersonaVoice({
-            gender: p.gender ?? "male",
-            age: p.age ?? 30,
-            accent: p.accent ?? "American",
-            initialReaction: p.initialReaction ?? "",
-          }),
-        ),
-      );
+    const voiceAssignments = selectVoicesForPersonas(
+      insertedPersonas.map((p) => ({
+        id: p.id,
+        gender: p.gender,
+        accent: p.accent,
+        age: p.age,
+      })),
+    );
 
-      for (let j = 0; j < batch.length; j++) {
-        const p = batch[j];
-        const result = results[j];
-        if (result.status === "fulfilled") {
+    await Promise.all(
+      insertedPersonas.map(async (p) => {
+        const voiceId = voiceAssignments.get(p.id);
+        if (voiceId) {
           await db
             .update(personasTable)
-            .set({ voiceId: result.value })
+            .set({ voiceId })
             .where(eq(personasTable.id, p.id));
           sseBroker.emit(analysisId, {
             type: "voice_progress",
-            data: { personaId: p.id, voiceId: result.value },
+            data: { personaId: p.id, voiceId },
           });
-        } else {
-          logger.error(
-            { err: result.reason, personaId: p.id },
-            "Voice Design failed for persona",
-          );
         }
-      }
-    }
+      }),
+    );
 
     const updatedPersonas = await db
       .select()
@@ -199,9 +189,10 @@ export async function runPipeline(
     const top8 = selectTop8(personasWithVoice);
     const firstExaTitle = exa.length > 0 ? exa[0].title : "recent coverage";
 
-    const audioResults = await Promise.allSettled(
-      top8.map((p) =>
-        generatePersonaAudio(
+    const audioUrls: string[] = [];
+    for (const p of top8) {
+      try {
+        const audioUrl = await generatePersonaAudio(
           {
             id: p.id,
             voiceId: p.voiceId!,
@@ -215,26 +206,18 @@ export async function runPipeline(
           },
           analysisId,
           firstExaTitle,
-        ),
-      ),
-    );
-
-    const audioUrls: string[] = [];
-    for (let j = 0; j < top8.length; j++) {
-      const p = top8[j];
-      const result = audioResults[j];
-      if (result.status === "fulfilled") {
+        );
         await db
           .update(personasTable)
-          .set({ audioUrl: result.value, hasAudio: true })
+          .set({ audioUrl, hasAudio: true })
           .where(eq(personasTable.id, p.id));
-        audioUrls.push(result.value);
+        audioUrls.push(audioUrl);
         sseBroker.emit(analysisId, {
           type: "audio_progress",
-          data: { personaId: p.id, audioUrl: result.value },
+          data: { personaId: p.id, audioUrl },
         });
-      } else {
-        logger.error({ err: result.reason, personaId: p.id }, "TTS failed");
+      } catch (err) {
+        logger.error({ err, personaId: p.id }, "TTS failed");
       }
     }
 

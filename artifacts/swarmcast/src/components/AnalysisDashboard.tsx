@@ -1,19 +1,31 @@
+import { useState } from "react";
 import { FullAnalysis } from "@workspace/api-client-react";
 import { AudioPlayer } from "./AudioPlayer";
-import { Gauge } from "./ui/gauge";
-import { Progress } from "./ui/progress";
 import { HistorySidebar } from "./HistorySidebar";
-import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
-import { Badge } from "./ui/badge";
-import { ShieldAlert, ShieldCheck, AlertTriangle, ExternalLink, MessageCircle, TrendingUp, AlertCircle, Radio, Search, Users } from "lucide-react";
 import { SentimentForecastChart } from "./SentimentForecastChart";
 import { PersonaCard } from "./PersonaCard";
-import { useState } from "react";
+import { Gauge } from "./ui/gauge";
+import { motion } from "framer-motion";
+import {
+  ShieldCheck, ShieldAlert, AlertTriangle, ExternalLink,
+  TrendingUp, Radio, Search, Users, ChevronDown, ChevronUp
+} from "lucide-react";
 
 interface AnalysisDashboardProps {
   analysis: FullAnalysis;
   onSelectHistory: (id: string) => void;
   autoPlayMontage?: boolean;
+}
+
+function Section({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <section className="space-y-4">
+      <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest">
+        {label}
+      </p>
+      {children}
+    </section>
+  );
 }
 
 export function AnalysisDashboard({ analysis, onSelectHistory, autoPlayMontage = false }: AnalysisDashboardProps) {
@@ -37,234 +49,240 @@ export function AnalysisDashboard({ analysis, onSelectHistory, autoPlayMontage =
   const marketPct = Math.round((marketProbability ?? 0) * 100);
 
   const [activeAudioId, setActiveAudioId] = useState<number | null>(null);
+  const [showAllPersonas, setShowAllPersonas] = useState(false);
 
-  const getRiskColor = (level: string) => {
-    switch(level?.toLowerCase()) {
-      case 'low': return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
-      case 'medium': return 'bg-amber-500/10 text-amber-400 border-amber-500/20';
-      case 'high': return 'bg-rose-500/10 text-rose-400 border-rose-500/20';
-      default: return 'bg-slate-500/10 text-slate-400 border-slate-500/20';
-    }
+  const displayedPersonas = showAllPersonas ? personas : personas.slice(0, 12);
+
+  const riskStyles: Record<string, string> = {
+    low:    "text-positive border-positive/30 bg-[color-mix(in_oklch,var(--positive)_8%,transparent)]",
+    medium: "text-amber-400 border-amber-500/30 bg-amber-500/8",
+    high:   "text-negative border-negative/30 bg-[color-mix(in_oklch,var(--negative)_8%,transparent)]",
   };
+  const riskClass = riskStyles[(riskLevel || "medium").toLowerCase()] ?? riskStyles.medium;
+
+  const avgSentVal = avgSentiment ?? 0;
+  const sentimentLabel =
+    avgSentVal > 0.3 ? "Positive" :
+    avgSentVal < -0.3 ? "Negative" : "Mixed";
 
   return (
-    <div className="flex flex-col lg:flex-row h-[calc(100vh-4rem)] overflow-hidden">
-      <div className="flex-1 overflow-y-auto p-4 md:p-8 space-y-8 scroll-smooth">
-        
-        {/* Header & Hero */}
-        <div className="space-y-6">
-          <div>
-            <h1 className="text-3xl md:text-4xl font-bold tracking-tight mb-2">{title}</h1>
-            <p className="text-muted-foreground flex items-center gap-2">
-              <MessageCircle className="w-4 h-4" /> 
-              SwarmCast Analysis Results
-            </p>
-          </div>
+    <div className="flex h-[calc(100vh-3.5rem)] overflow-hidden">
 
+      {/* Main scroll area */}
+      <div className="flex-1 overflow-y-auto">
+
+        {/* Title banner */}
+        <div className="border-b border-border/50 px-6 md:px-10 py-6">
+          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+            <h1 className="font-display text-2xl md:text-3xl text-foreground leading-tight">{title}</h1>
+            <p className="text-xs font-mono text-muted-foreground mt-1">SwarmCast analysis · {personas.length} personas</p>
+          </motion.div>
+        </div>
+
+        <div className="px-6 md:px-10 py-8 space-y-12 max-w-5xl">
+
+          {/* Podcast player */}
           {montageUrl && (
-            <Card className="border-primary/30 bg-card/60 backdrop-blur overflow-hidden relative group">
-              <div className="absolute inset-0 bg-gradient-to-br from-primary/10 to-transparent pointer-events-none"></div>
-              <CardContent className="p-8 relative z-10">
-                <div className="flex flex-col md:flex-row items-center gap-8">
-                  <div className="w-32 h-32 rounded-full bg-primary/20 border-4 border-primary/30 flex items-center justify-center flex-shrink-0 shadow-[0_0_30px_rgba(59,130,246,0.3)]">
-                    <Radio className="w-12 h-12 text-primary animate-pulse" />
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.1 }}
+            >
+              <Section label="Focus Group Podcast">
+                <div className="flex items-center gap-6 py-4">
+                  <div className="flex-shrink-0 w-10 h-10 rounded-full bg-primary/15 flex items-center justify-center">
+                    <Radio className="w-5 h-5 text-primary" />
                   </div>
-                  <div className="flex-1 text-center md:text-left">
-                    <h2 className="text-2xl font-bold mb-2">Focus Group Podcast</h2>
-                    <p className="text-muted-foreground mb-6">Listen to the synthesized reaction of 25 AI personas discussing your announcement.</p>
-                    <AudioPlayer src={montageUrl} autoPlay={autoPlayMontage} className="max-w-md w-full bg-background/80" />
+                  <div className="flex-1">
+                    <p className="text-sm text-muted-foreground mb-3">
+                      Synthesized reaction of {personas.filter(p => p.audioUrl).length} voices discussing your announcement.
+                    </p>
+                    <AudioPlayer src={montageUrl} autoPlay={autoPlayMontage} className="w-full max-w-lg" />
                   </div>
                 </div>
-              </CardContent>
-            </Card>
+              </Section>
+            </motion.div>
           )}
-        </div>
 
-        {/* Top metrics grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card className="bg-card/40">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Swarm Sentiment</CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-col items-center justify-center py-4">
-              <Gauge value={avgSentiment || 0} size={100} />
-            </CardContent>
-          </Card>
+          {/* Key metrics — varied weights, not identical cards */}
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.15 }}>
+            <Section label="Signal overview">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-0 border border-border/50 rounded-lg overflow-hidden divide-x divide-y md:divide-y-0 divide-border/50">
 
-          <Card className="bg-card/40">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Dominant Emotion</CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-col items-center justify-center py-8">
-              <div className="text-3xl font-bold capitalize text-primary drop-shadow-[0_0_10px_rgba(59,130,246,0.5)]">
-                {dominantEmotion || 'Mixed'}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-card/40">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Risk Level</CardTitle>
-            </CardHeader>
-            <CardContent className="flex flex-col items-center justify-center py-8">
-              <Badge variant="outline" className={`text-lg px-4 py-2 uppercase tracking-widest ${getRiskColor(riskLevel || 'medium')}`}>
-                {riskLevel || 'Medium'} Risk
-              </Badge>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-card/40">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider flex items-center justify-between">
-                Viral Potential <TrendingUp className="w-4 h-4 text-primary" />
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="py-6">
-              <div className="text-4xl font-bold mb-4 text-center">
-                {viralPct}%
-              </div>
-              <Progress value={viralPct} className="h-2" />
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Summary & Market */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <Card className="lg:col-span-2 bg-card/40">
-            <CardHeader>
-              <CardTitle>Executive Summary</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-lg leading-relaxed text-muted-foreground">
-                {swarmSummary}
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-card/40 border-primary/20">
-            <CardHeader>
-              <CardTitle className="text-primary flex items-center gap-2">
-                <AlertCircle className="w-5 h-5" />
-                Market Prediction
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="font-medium text-lg mb-6">{marketQuestion}</p>
-              <div className="flex items-center gap-4">
-                <div className="flex-1">
-                  <div className="flex justify-between text-sm mb-2">
-                    <span className="text-muted-foreground">No</span>
-                    <span className="font-mono text-primary font-bold">{marketPct}% Yes</span>
+                {/* Sentiment gauge — larger */}
+                <div className="col-span-2 md:col-span-1 p-6 flex flex-col items-center gap-3">
+                  <Gauge value={avgSentVal} size={90} />
+                  <div className="text-center">
+                    <p className="text-xs font-mono text-muted-foreground uppercase tracking-wider">Sentiment</p>
+                    <p className="text-sm font-medium mt-0.5">{sentimentLabel}</p>
                   </div>
-                  <Progress value={marketPct} className="h-3" />
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
 
-        {/* Fact Check */}
-        {factCheck && (
-          <Card className="bg-card/40">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <ShieldCheck className="w-5 h-5 text-emerald-400" />
-                Reality Check
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="p-4 bg-background/50 rounded-lg border border-border/50">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="font-semibold">Overall Assessment</span>
-                  <Badge variant="outline">{factCheck.accuracyRating}</Badge>
+                {/* Dominant emotion */}
+                <div className="p-6 flex flex-col justify-between">
+                  <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest">Dominant</p>
+                  <p className="font-display text-2xl capitalize mt-4">{dominantEmotion || "Mixed"}</p>
                 </div>
-                <p className="text-muted-foreground">{factCheck.objectiveAssessment}</p>
-              </div>
 
-              <div className="space-y-3">
-                <h4 className="font-medium text-sm text-muted-foreground uppercase tracking-wider">Analyzed Claims</h4>
-                {factCheck.factCheckItems?.map((item, i) => (
-                  <div key={i} className="flex gap-4 p-3 rounded bg-background/30 border border-border/30">
-                    <div className="flex-shrink-0 mt-1">
-                      {item.status === 'accurate' ? <ShieldCheck className="w-5 h-5 text-emerald-400" /> :
-                       item.status === 'misleading' ? <ShieldAlert className="w-5 h-5 text-rose-400" /> :
-                       <AlertTriangle className="w-5 h-5 text-amber-400" />}
-                    </div>
-                    <div>
-                      <p className="font-medium mb-1">"{item.claim}"</p>
-                      <p className="text-sm text-muted-foreground">{item.note}</p>
+                {/* Risk */}
+                <div className="p-6 flex flex-col justify-between">
+                  <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest">Risk</p>
+                  <div className={`mt-4 inline-flex self-start items-center px-2.5 py-1 rounded border text-xs font-medium capitalize ${riskClass}`}>
+                    {riskLevel || "Medium"}
+                  </div>
+                </div>
+
+                {/* Viral */}
+                <div className="p-6 flex flex-col justify-between">
+                  <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest">Viral potential</p>
+                  <div className="mt-4">
+                    <p className="text-3xl font-semibold tabular-nums">{viralPct}<span className="text-lg text-muted-foreground font-normal">%</span></p>
+                    <div className="mt-2 h-0.5 bg-border rounded-full overflow-hidden w-full">
+                      <div className="h-full bg-primary" style={{ width: `${viralPct}%` }} />
                     </div>
                   </div>
-                ))}
+                </div>
               </div>
-            </CardContent>
-          </Card>
-        )}
+            </Section>
+          </motion.div>
 
-        {/* Web Context */}
-        {exaResults && exaResults.length > 0 && (
-          <div className="space-y-4">
-            <h3 className="text-xl font-bold flex items-center gap-2">
-              <Search className="w-5 h-5 text-primary" /> Web Context
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-              {exaResults.map((result, i) => (
-                <a key={i} href={result.url} target="_blank" rel="noopener noreferrer" className="block group">
-                  <Card className="h-full bg-card/40 hover:bg-card/80 transition-colors border-border/40 hover:border-primary/30">
-                    <CardContent className="p-4 flex flex-col h-full">
-                      <h4 className="font-medium line-clamp-2 mb-2 group-hover:text-primary transition-colors flex items-start gap-2">
-                        <ExternalLink className="w-4 h-4 flex-shrink-0 mt-1 opacity-50 group-hover:opacity-100" />
-                        {result.title}
-                      </h4>
-                      <p className="text-xs text-muted-foreground line-clamp-3 mt-auto">{result.snippet}</p>
-                    </CardContent>
-                  </Card>
-                </a>
-              ))}
+          {/* Summary + market — different widths, left-right contrast */}
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }}>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              <div className="md:col-span-2 space-y-3">
+                <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest">Executive summary</p>
+                <p className="text-base leading-relaxed text-foreground/80">{swarmSummary}</p>
+              </div>
+
+              {marketQuestion && (
+                <div className="space-y-3">
+                  <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest">Market prediction</p>
+                  <p className="text-sm font-medium leading-snug">{marketQuestion}</p>
+                  <div className="space-y-1.5 mt-4">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-muted-foreground">No</span>
+                      <span className="font-mono font-semibold text-primary">{marketPct}%</span>
+                    </div>
+                    <div className="h-1 bg-border rounded-full overflow-hidden">
+                      <div className="h-full bg-primary" style={{ width: `${marketPct}%` }} />
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">Probability of "Yes"</p>
+                  </div>
+                </div>
+              )}
             </div>
-          </div>
-        )}
+          </motion.div>
 
-        {/* Forecast Chart */}
-        {forecastPoints && forecastPoints.length > 0 && (
-          <Card className="bg-card/40">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <TrendingUp className="w-5 h-5 text-primary" />
-                Sentiment Forecast
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <SentimentForecastChart points={forecastPoints} />
-            </CardContent>
-          </Card>
-        )}
+          {/* Fact check */}
+          {factCheck && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.25 }}>
+              <Section label="Reality check">
+                <div className="space-y-3">
+                  <div className="flex items-start justify-between gap-4 pb-3 border-b border-border/40">
+                    <p className="text-sm text-muted-foreground leading-relaxed">{factCheck.objectiveAssessment}</p>
+                    <span className="flex-shrink-0 text-xs font-mono text-muted-foreground border border-border/50 px-2 py-0.5 rounded">
+                      {factCheck.accuracyRating}
+                    </span>
+                  </div>
+                  {factCheck.factCheckItems?.map((item, i) => (
+                    <div key={i} className="flex gap-3 py-2">
+                      <div className="flex-shrink-0 mt-0.5">
+                        {item.status === "accurate" ? (
+                          <ShieldCheck className="w-4 h-4 text-positive" />
+                        ) : item.status === "misleading" ? (
+                          <ShieldAlert className="w-4 h-4 text-negative" />
+                        ) : (
+                          <AlertTriangle className="w-4 h-4 text-amber-400" />
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium mb-0.5">"{item.claim}"</p>
+                        <p className="text-xs text-muted-foreground">{item.note}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </Section>
+            </motion.div>
+          )}
 
-        {/* Personas Grid */}
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-xl font-bold flex items-center gap-2">
-              <Users className="w-5 h-5 text-primary" /> 
-              Swarm Personas ({personas.length})
-            </h3>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
-            {personas.map((persona, idx) => (
-              <PersonaCard 
-                key={persona.id} 
-                persona={persona} 
-                index={idx} 
-                isActive={activeAudioId === persona.id}
-                onPlay={() => setActiveAudioId(persona.id)}
-                pipelineComplete={true}
-              />
-            ))}
-          </div>
+          {/* Web context — horizontal scroll, no same-size card grid */}
+          {exaResults && exaResults.length > 0 && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}>
+              <Section label="Web context">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {exaResults.map((result, i) => (
+                    <a
+                      key={i}
+                      href={result.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="group flex gap-3 p-3 rounded-md border border-border/30 hover:border-border hover:bg-card/40 transition-all"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors" />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium line-clamp-2 group-hover:text-primary transition-colors leading-snug">
+                          {result.title}
+                        </p>
+                        <p className="text-xs text-muted-foreground/60 line-clamp-2 mt-1">{result.snippet}</p>
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              </Section>
+            </motion.div>
+          )}
+
+          {/* Forecast chart */}
+          {forecastPoints && forecastPoints.length > 0 && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.35 }}>
+              <Section label="Sentiment forecast">
+                <div className="border border-border/40 rounded-lg p-4">
+                  <SentimentForecastChart points={forecastPoints} />
+                </div>
+              </Section>
+            </motion.div>
+          )}
+
+          {/* Personas */}
+          {personas.length > 0 && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }}>
+              <Section label={`Swarm personas · ${personas.length}`}>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3">
+                  {displayedPersonas.map((persona, idx) => (
+                    <PersonaCard
+                      key={persona.id}
+                      persona={persona}
+                      index={idx}
+                      isActive={activeAudioId === persona.id}
+                      onPlay={() => setActiveAudioId(persona.id)}
+                      pipelineComplete={true}
+                    />
+                  ))}
+                </div>
+
+                {personas.length > 12 && (
+                  <button
+                    onClick={() => setShowAllPersonas(v => !v)}
+                    className="mt-4 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors mx-auto"
+                  >
+                    {showAllPersonas ? (
+                      <><ChevronUp className="w-3.5 h-3.5" /> Show fewer</>
+                    ) : (
+                      <><ChevronDown className="w-3.5 h-3.5" /> Show all {personas.length} personas</>
+                    )}
+                  </button>
+                )}
+              </Section>
+            </motion.div>
+          )}
+
+          <div className="h-12" />
         </div>
-
       </div>
 
-      <div className="w-full lg:w-80 border-l border-border/40 bg-card/20 overflow-y-auto">
+      {/* Sidebar */}
+      <div className="hidden xl:block w-56 border-l border-border/50 overflow-y-auto flex-shrink-0">
         <HistorySidebar onSelectHistory={onSelectHistory} currentId={analysis.id} />
       </div>
     </div>

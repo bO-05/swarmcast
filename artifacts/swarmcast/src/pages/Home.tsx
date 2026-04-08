@@ -43,18 +43,32 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex flex-col font-sans selection:bg-primary/30">
-      <header className="border-b border-border/40 bg-card/50 backdrop-blur-md sticky top-0 z-50">
-        <div className="container mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2 cursor-pointer" onClick={handleGoHome}>
-            <div className="w-8 h-8 rounded bg-primary flex items-center justify-center font-bold text-primary-foreground shadow-[0_0_15px_rgba(59,130,246,0.5)]">
-              SC
+    <div className="min-h-screen bg-background text-foreground flex flex-col">
+      <header className="border-b border-border/50 sticky top-0 z-50 bg-background/95 backdrop-blur-sm">
+        <div className="px-6 h-14 flex items-center justify-between max-w-screen-2xl mx-auto">
+          <button
+            className="flex items-center gap-3 group"
+            onClick={handleGoHome}
+          >
+            <div className="w-7 h-7 rounded bg-primary flex items-center justify-center">
+              <span className="text-primary-foreground text-xs font-bold tracking-tight">SC</span>
             </div>
-            <div>
-              <h1 className="font-bold text-lg leading-none tracking-tight">SwarmCast</h1>
-              <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Mission Control</p>
+            <div className="flex items-baseline gap-2">
+              <span className="font-semibold text-sm tracking-tight">SwarmCast</span>
+              <span className="text-[10px] text-muted-foreground font-mono uppercase tracking-widest hidden sm:inline">
+                Mission Control
+              </span>
             </div>
-          </div>
+          </button>
+
+          {activeAnalysisId && !isPipelineActive && (
+            <button
+              onClick={handleGoHome}
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              ← New analysis
+            </button>
+          )}
         </div>
       </header>
 
@@ -67,17 +81,16 @@ export default function Home() {
           <AnalysisDashboard analysis={fullAnalysis} onSelectHistory={handleSelectHistory} autoPlayMontage={isNewAnalysis} />
         ) : isLoadingAnalysis ? (
           <div className="flex-1 flex items-center justify-center">
-            <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+            <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
           </div>
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
-            <h2 className="text-2xl font-bold mb-2">Analysis Failed or Not Found</h2>
-            <p className="text-muted-foreground mb-6">Could not load the analysis data.</p>
+          <div className="flex-1 flex flex-col items-center justify-center text-center p-8 gap-4">
+            <p className="text-muted-foreground">Analysis not found.</p>
             <button
-              className="px-6 py-2 bg-primary text-primary-foreground rounded-md font-medium"
+              className="text-sm text-primary hover:underline"
               onClick={handleGoHome}
             >
-              Back to Home
+              Back to home
             </button>
           </div>
         )}

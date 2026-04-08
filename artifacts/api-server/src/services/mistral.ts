@@ -101,16 +101,38 @@ Rules:
 - Exactly 25 personas in the "personas" array
 - Diverse persona types: skeptic, enthusiast, neutral, critic, concerned, influencer, institutional
 - Ages 18-72, diverse MBTI types, various countries and accents
-- Each persona MUST include: accent (e.g. "British", "American", "Indian", "Australian", "African", "Irish", "Brazilian Portuguese"), gender ("male" or "female"), voice_style (e.g. "calm and measured", "rapid and energetic", "warm and reflective")
 - final_sentiment within ±0.3 of initial_sentiment normally; up to ±0.5 if fact_check issues are severe
 - belief_state.confidence lower when many fact-check issues found
 - Approximately 30% of personas with would_share = true
 - At most 6 personas with |final_sentiment| > 0.7
-- influence_weight between 0.5 and 3.0
-- activity_level between 0.0 and 1.0
-- sentiment values between -1.0 and 1.0
+- influence_weight between 0.5 and 3.0, activity_level between 0.0 and 1.0
+- All sentiment values between -1.0 and 1.0
 
-Return JSON with a single key "personas" containing the array.`;
+Each persona object MUST have ALL of these exact snake_case fields:
+{
+  "persona_name": "Full Name",
+  "persona_type": "skeptic|enthusiast|neutral|critic|concerned|influencer|institutional",
+  "background": "2-sentence bio describing their profession and life context",
+  "mbti": "e.g. INTJ",
+  "age": 35,
+  "country": "e.g. United States",
+  "accent": "e.g. American|British|Indian|Australian|Canadian|Irish|Brazilian Portuguese|French|German|Nigerian",
+  "gender": "male|female",
+  "voice_style": "e.g. calm and measured|rapid and energetic|warm and reflective|dry and analytical",
+  "activity_level": 0.7,
+  "influence_weight": 1.5,
+  "sentiment_bias": 0.1,
+  "initial_reaction": "1-2 sentence immediate gut reaction to the announcement",
+  "final_opinion": "1-2 sentence considered opinion after reflection",
+  "initial_sentiment": 0.3,
+  "final_sentiment": 0.25,
+  "belief_state": { "stance": 0.3, "confidence": 0.7 },
+  "key_concern": "The single biggest worry or reservation this persona has",
+  "would_share": true,
+  "platform_preference": "e.g. Twitter|LinkedIn|Reddit|Facebook|TikTok"
+}
+
+Return JSON with a single key "personas" containing the array of exactly 25 persona objects.`;
 
   const userPrompt = `Title: ${title}
 

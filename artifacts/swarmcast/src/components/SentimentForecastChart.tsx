@@ -1,12 +1,14 @@
 import { ForecastPoint } from "@workspace/api-client-react";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Area, AreaChart, ComposedChart } from 'recharts';
+import {
+  ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid,
+  Tooltip, ResponsiveContainer, ReferenceLine
+} from "recharts";
 
 interface SentimentForecastChartProps {
   points: ForecastPoint[];
 }
 
 export function SentimentForecastChart({ points }: SentimentForecastChartProps) {
-  // Sort points by hourOffset
   const sortedPoints = [...points].sort((a, b) => (a.hourOffset || 0) - (b.hourOffset || 0));
 
   const data = sortedPoints.map(p => ({
@@ -15,99 +17,96 @@ export function SentimentForecastChart({ points }: SentimentForecastChartProps) 
     confidenceLow: p.confidenceLow,
     confidenceHigh: p.confidenceHigh,
     isForecast: p.isForecast,
-    // Add separate fields for historical vs forecast to style differently
     historicalSentiment: p.isForecast ? null : p.sentiment,
     forecastSentiment: p.isForecast ? p.sentiment : null,
-    // Need a connecting point between historical and forecast
-    // We'll let Recharts handle gaps if needed, but it's continuous
   }));
 
-  // Find the zero point (now) to add a reference line
-  const nowPoint = data.find(d => d.hour === 0);
+  const primary = "oklch(0.77 0.14 66)";
+  const textMuted = "oklch(0.57 0.020 65)";
+  const borderColor = "oklch(0.22 0.01 62)";
 
   return (
-    <div className="w-full h-[300px]">
+    <div className="w-full h-[260px]">
       <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart
-          data={data}
-          margin={{
-            top: 20,
-            right: 20,
-            bottom: 20,
-            left: 20,
-          }}
-        >
-          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" vertical={false} />
-          <XAxis 
-            dataKey="hour" 
-            stroke="rgba(255,255,255,0.5)" 
+        <ComposedChart data={data} margin={{ top: 16, right: 16, bottom: 16, left: 8 }}>
+          <CartesianGrid strokeDasharray="4 4" stroke={borderColor} vertical={false} />
+          <XAxis
+            dataKey="hour"
+            stroke="none"
+            tick={{ fill: textMuted, fontSize: 11, fontFamily: "DM Mono, monospace" }}
+            tickMargin={8}
             tickFormatter={(val) => val === 0 ? "Now" : val > 0 ? `+${val}h` : `${val}h`}
-            tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 12 }}
-            tickMargin={10}
           />
-          <YAxis 
-            domain={[-1, 1]} 
-            stroke="rgba(255,255,255,0.5)"
-            tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 12 }}
-            tickFormatter={(val) => val.toFixed(1)}
-            width={40}
+          <YAxis
+            domain={[-1, 1]}
+            stroke="none"
+            tick={{ fill: textMuted, fontSize: 11, fontFamily: "DM Mono, monospace" }}
+            tickFormatter={(val: number) => val.toFixed(1)}
+            width={32}
           />
-          <Tooltip 
-            contentStyle={{ backgroundColor: 'rgba(10, 15, 30, 0.9)', borderColor: 'rgba(59, 130, 246, 0.3)', borderRadius: '8px' }}
-            itemStyle={{ color: '#fff' }}
-            labelFormatter={(val) => val === 0 ? "Current Sentiment" : val > 0 ? `Forecast: +${val} Hours` : `Historical: ${val} Hours`}
-          />
-          
-          <ReferenceLine y={0} stroke="rgba(255,255,255,0.2)" strokeDasharray="3 3" />
-          <ReferenceLine x={0} stroke="rgba(59, 130, 246, 0.5)" strokeDasharray="3 3" label={{ position: 'top', value: 'Announcement', fill: 'rgba(59, 130, 246, 0.8)', fontSize: 12 }} />
-
-          {/* Confidence Interval Area */}
-          <Area 
-            type="monotone" 
-            dataKey="confidenceHigh" 
-            stroke="none" 
-            fill="rgba(59, 130, 246, 0.1)" 
-            isAnimationActive={false}
-          />
-          <Area 
-            type="monotone" 
-            dataKey="confidenceLow" 
-            stroke="none" 
-            fill="var(--color-card)" // Trick to fill the bottom part back to background color
-            isAnimationActive={false}
+          <Tooltip
+            contentStyle={{
+              background: "oklch(0.145 0.008 62)",
+              border: `1px solid ${borderColor}`,
+              borderRadius: "6px",
+              fontSize: "12px",
+              fontFamily: "DM Mono, monospace",
+              color: "oklch(0.94 0.010 80)",
+            }}
+            labelFormatter={(val: number) =>
+              val === 0 ? "Announcement" : val > 0 ? `+${val}h forecast` : `${val}h prior`
+            }
+            formatter={(val: number) => [val?.toFixed(3), "Sentiment"]}
           />
 
-          {/* Historical Line */}
-          <Line 
-            type="monotone" 
-            dataKey="historicalSentiment" 
-            stroke="#3b82f6" 
-            strokeWidth={3}
-            dot={false}
-            activeDot={{ r: 6, fill: "#3b82f6", stroke: "#fff" }}
-            connectNulls
+          <ReferenceLine y={0} stroke={borderColor} strokeDasharray="3 3" />
+          <ReferenceLine
+            x={0}
+            stroke={primary}
+            strokeDasharray="3 3"
+            strokeOpacity={0.5}
+            label={{ position: "top", value: "Now", fill: primary, fontSize: 10, fontFamily: "DM Mono, monospace" }}
           />
-          
-          {/* Forecast Line */}
-          <Line 
-            type="monotone" 
-            dataKey="forecastSentiment" 
-            stroke="#3b82f6" 
-            strokeWidth={3}
-            strokeDasharray="5 5"
-            dot={false}
-            activeDot={{ r: 6, fill: "#3b82f6", stroke: "#fff" }}
-            connectNulls
-          />
-          
-          {/* A continuous hidden line just for full tooltips/connecting */}
-          <Line 
-            type="monotone" 
-            dataKey="sentiment" 
-            stroke="transparent" 
-            dot={false}
-            activeDot={false}
+
+          {/* Confidence band */}
+          <Area
+            type="monotone"
+            dataKey="confidenceHigh"
+            stroke="none"
+            fill={primary}
+            fillOpacity={0.08}
             isAnimationActive={false}
+          />
+          <Area
+            type="monotone"
+            dataKey="confidenceLow"
+            stroke="none"
+            fill="oklch(0.145 0.008 62)"
+            isAnimationActive={false}
+          />
+
+          {/* Historical */}
+          <Line
+            type="monotone"
+            dataKey="historicalSentiment"
+            stroke={primary}
+            strokeWidth={2}
+            dot={false}
+            activeDot={{ r: 4, fill: primary, stroke: "oklch(0.10 0.008 62)", strokeWidth: 2 }}
+            connectNulls
+          />
+
+          {/* Forecast */}
+          <Line
+            type="monotone"
+            dataKey="forecastSentiment"
+            stroke={primary}
+            strokeWidth={1.5}
+            strokeDasharray="5 4"
+            strokeOpacity={0.6}
+            dot={false}
+            activeDot={{ r: 4, fill: primary, stroke: "oklch(0.10 0.008 62)", strokeWidth: 2 }}
+            connectNulls
           />
         </ComposedChart>
       </ResponsiveContainer>

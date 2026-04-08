@@ -651,10 +651,17 @@ export async function createSwarmAgent(
     name: string;
     type: string;
     country: string;
+    age: number;
+    gender: string;
+    background: string;
+    mbti: string;
+    accent: string;
     finalSentiment: number;
+    influenceWeight: number;
     keyConcern: string;
     wouldShare: boolean;
     reaction: string;
+    finalOpinion: string;
   }>,
   context: {
     keyThemes: string[];
@@ -668,12 +675,18 @@ export async function createSwarmAgent(
 ): Promise<string | null> {
   const apiKey = getApiKey();
 
-  const personaList = personas
-    .map(
-      (p) =>
-        `- ${p.name} (${p.type}, ${p.country}): sentiment ${p.finalSentiment.toFixed(2)}, would share: ${p.wouldShare ? "yes" : "no"}, concern: ${p.keyConcern}. Reaction: "${p.reaction}"`,
-    )
-    .join("\n");
+  const sorted = [...personas].sort((a, b) => a.finalSentiment - b.finalSentiment);
+
+  const personaList = sorted
+    .map((p, i) => {
+      const rank = i + 1;
+      const sentLabel = p.finalSentiment > 0.3 ? "supportive" : p.finalSentiment < -0.3 ? "opposing" : "neutral";
+      return `${rank}. ${p.name} | ${p.age}yo ${p.gender}, ${p.country} (${p.accent} accent) | ${p.type} | MBTI: ${p.mbti} | sentiment: ${p.finalSentiment.toFixed(2)} (${sentLabel}) | influence: ${p.influenceWeight.toFixed(1)} | shares: ${p.wouldShare ? "yes" : "no"}
+   Background: ${p.background.slice(0, 80)}
+   Concern: ${p.keyConcern}
+   Final opinion: "${p.finalOpinion.slice(0, 120)}"`;
+    })
+    .join("\n\n");
 
   const themesList = context.keyThemes.length > 0
     ? `Key themes: ${context.keyThemes.join(", ")}`
@@ -696,7 +709,7 @@ export async function createSwarmAgent(
 ${swarmSummary}
 
 ## Sentiment Metrics
-- Average sentiment: ${context.avgSentiment.toFixed(2)} (range -1 to 1)
+- Average sentiment: ${context.avgSentiment.toFixed(2)} (scale: -1 = strongly oppose, +1 = strongly support)
 - Risk level: ${context.riskLevel}
 - Viral potential: ${Math.round(context.viralPotential * 100)}%
 - Would share: ${sharingPct}% (${sharingCount}/${personas.length} personas)
@@ -709,13 +722,37 @@ ${context.factCheckSummary ? `## Fact-Check\n${context.factCheckSummary}` : ""}
 
 ${suggestionsList}
 
-## All ${personas.length} Persona Stances
+## All ${personas.length} Personas (sorted most-opposing → most-supportive)
 ${personaList}
 
-## Instructions
-When answering questions, draw on specific persona perspectives by name. Reference sentiment scores and concerns authentically. Present the full spectrum of views — both supportive and critical. If asked about improvements, share the prescriptive suggestions. Be direct, insightful, and analytically honest. Keep responses conversational and under 200 words.`;
+---
 
-  const firstMessage = `Hello! I'm the SwarmCast Collective — ${personas.length} voices who just analysed "${title}". ${(swarmSummary ?? "").slice(0, 120)}... What would you like to know about how the public might respond?`;
+## PERSONA ROLEPLAY PROTOCOL
+When a user wants to speak WITH, hear FROM, or channel a specific persona — use ANY of these phrasings:
+"talk to [name]", "let me hear from [name]", "put me through to [name]", "what does [name] say?", "speak as [name]", "I want [name]'s voice", "channel [name]", "what would [name] think?"
+
+You MUST:
+1. Fully adopt that persona's identity in FIRST PERSON ("I am...", "My concern is...")
+2. Match their age, country, background, and keyConcern authentically
+3. Speak in the emotional register their sentiment score implies (opposing = frustrated/skeptical, supportive = enthusiastic/optimistic)
+4. Open with: "[ Speaking as {name}, {age}, {country} ]" then immediately speak as them
+5. Stay in character until user asks to "go back", "return to the collective", or asks about a different persona
+
+## PERSONA DISCOVERY — natural language mapping
+Users can request personas by description, not just name. Match as follows:
+- "most opposing" / "most against" / "most critical" / "skeptic" → persona #1 in the list (lowest sentiment)
+- "most supportive" / "most positive" / "biggest fan" → last persona in list (highest sentiment)
+- "most influential" → highest influenceWeight score
+- "oldest" → highest age; "youngest" → lowest age
+- "most likely to share" → would share: yes AND highest sentiment
+- Combinations: "oldest that most agrees" → filter positive-sentiment personas, pick highest age
+- "the anxious one" / "the worried one" → most negative sentiment
+- Always confirm your match: "That maps to {name}, {age}yo from {country}..."
+
+## COLLECTIVE MODE (default)
+When not in persona roleplay mode, answer as the Collective: synthesise multiple views, cite specific personas by name, reference their sentiment and concerns. Present both supportive and critical voices. Keep responses under 180 words.`;
+
+  const firstMessage = `Hello! I'm the SwarmCast Collective — ${personas.length} voices who just analysed "${title}". ${(swarmSummary ?? "").slice(0, 120)}... Ask me anything about the public reaction, or say "talk to [persona name]" to hear directly from one of them.`;
 
   try {
     const res = await fetch(`${ELEVENLABS_API_URL}/v1/convai/agents/create`, {

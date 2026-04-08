@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Conversation } from "@11labs/client";
-import { Mic, MicOff, X, Radio, Loader2, MessageSquare } from "lucide-react";
+import { Mic, MicOff, X, Radio, Loader2, MessageSquare, PhoneOff, Volume2, VolumeX } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useGetSwarmSignedUrl } from "@workspace/api-client-react";
@@ -24,14 +24,15 @@ export function SwarmChat({ analysisId, agentId, title }: SwarmChatProps) {
   const [status, setStatus] = useState<ConvStatus>("idle");
   const [mode, setMode] = useState<"speaking" | "listening">("listening");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [isMicMuted, setIsMicMuted] = useState(true);
-  const [isPttActive, setIsPttActive] = useState(false);
+  const [micOpen, setMicOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const conversationRef = useRef<Conversation | null>(null);
   const msgIdRef = useRef(0);
   const chatBoxRef = useRef<HTMLDivElement>(null);
+  const micOpenRef = useRef(false);
 
-  const { data: signedUrlData, isLoading: loadingUrl, isError: urlError } = useGetSwarmSignedUrl(analysisId);
+  const { data: signedUrlData, isLoading: loadingUrl, isError: urlError } =
+    useGetSwarmSignedUrl(analysisId);
 
   useEffect(() => {
     if (chatBoxRef.current) {
@@ -55,7 +56,12 @@ export function SwarmChat({ analysisId, agentId, title }: SwarmChatProps) {
 
   useEffect(() => {
     return () => {
-      conversationRef.current?.endSession().catch(() => null);
+      const conv = conversationRef.current;
+      if (conv) {
+        conv.setVolume({ volume: 0 });
+        conv.endSession().catch(() => null);
+        conversationRef.current = null;
+      }
     };
   }, []);
 
@@ -63,8 +69,8 @@ export function SwarmChat({ analysisId, agentId, title }: SwarmChatProps) {
     setStatus("connecting");
     setError(null);
     setMessages([]);
-    setIsMicMuted(true);
-    setIsPttActive(false);
+    setMicOpen(false);
+    micOpenRef.current = false;
 
     try {
       const conversation = await Conversation.startSession({
@@ -72,8 +78,8 @@ export function SwarmChat({ analysisId, agentId, title }: SwarmChatProps) {
         onConnect: () => setStatus("connected"),
         onDisconnect: () => {
           setStatus("idle");
-          setIsPttActive(false);
-          setIsMicMuted(true);
+          setMicOpen(false);
+          micOpenRef.current = false;
           conversationRef.current = null;
         },
         onMessage: ({ message, source }) => {
@@ -85,9 +91,20 @@ export function SwarmChat({ analysisId, agentId, title }: SwarmChatProps) {
         onError: (msg) => {
           setError(msg);
           setStatus("idle");
-          setIsPttActive(false);
+          setMicOpen(false);
+          micOpenRef.current = false;
         },
-        onModeChange: ({ mode: m }) => setMode(m),
+        onModeChange: ({ mode: m }) => {
+          setMode(m);
+          if (m === "speaking") {
+            if (micOpenRef.current && conversationRef.current) {
+              conversationRef.current.setMicMuted(true);
+              micOpenRef.current = false;
+              setMicOpen(false);
+            }
+            conversationRef.current?.setVolume({ volume: 1 });
+          }
+        },
         onStatusChange: ({ status: s }) => {
           if (s === "disconnected") setStatus("idle");
         },
@@ -95,42 +112,51 @@ export function SwarmChat({ analysisId, agentId, title }: SwarmChatProps) {
 
       conversationRef.current = conversation;
       conversation.setMicMuted(true);
+      conversation.setVolume({ volume: 1 });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to start conversation");
       setStatus("idle");
     }
   }
 
-  function endSession() {
-    setStatus("disconnecting");
-    setIsPttActive(false);
-    setIsMicMuted(true);
-    conversationRef.current?.endSession().catch(() => null);
+  const endSession = useCallback(() => {
+    const conv = conversationRef.current;
+    if (!conv) {
+      setStatus("idle");
+      return;
+    }
+    conv.setVolume({ volume: 0 });
     conversationRef.current = null;
-    setStatus("idle");
-  }
-
-  const pttStart = useCallback(() => {
-    if (!conversationRef.current || status !== "connected") return;
-    conversationRef.current.setMicMuted(false);
-    setIsMicMuted(false);
-    setIsPttActive(true);
-  }, [status]);
-
-  const pttEnd = useCallback(() => {
-    if (!conversationRef.current) return;
-    conversationRef.current.setMicMuted(true);
-    setIsMicMuted(true);
-    setIsPttActive(false);
+    setMicOpen(false);
+    micOpenRef.current = false;
+    setStatus("disconnecting");
+    conv.endSession().catch(() => null).finally(() => setStatus("idle"));
   }, []);
+
+  const toggleMic = useCallback(() => {
+    const conv = conversationRef.current;
+    if (!conv || status !== "connected") return;
+
+    if (micOpenRef.current) {
+      conv.setMicMuted(true);
+      conv.setVolume({ volume: 1 });
+      micOpenRef.current = false;
+      setMicOpen(false);
+    } else {
+      conv.setVolume({ volume: 0 });
+      conv.setMicMuted(false);
+      micOpenRef.current = true;
+      setMicOpen(true);
+    }
+  }, [status]);
 
   function handleOpen() {
     setOpen(true);
     setStatus("idle");
     setMessages([]);
     setError(null);
-    setIsMicMuted(true);
-    setIsPttActive(false);
+    setMicOpen(false);
+    micOpenRef.current = false;
   }
 
   function handleClose() {
@@ -169,7 +195,7 @@ export function SwarmChat({ analysisId, agentId, title }: SwarmChatProps) {
               "w-2 h-2 rounded-full transition-colors",
               isAiSpeaking
                 ? "bg-primary animate-pulse"
-                : status === "connected" && isPttActive
+                : micOpen
                 ? "bg-positive animate-pulse"
                 : status === "connected"
                 ? "bg-positive"
@@ -183,12 +209,12 @@ export function SwarmChat({ analysisId, agentId, title }: SwarmChatProps) {
               ? "Connecting to swarm..."
               : isAiSpeaking
               ? "Swarm is speaking..."
-              : status === "connected" && isPttActive
-              ? "Listening to you..."
+              : micOpen
+              ? "Mic open — swarm is listening"
               : status === "connected"
-              ? "SwarmCast Collective — hold to speak"
+              ? "SwarmCast Collective — ready"
               : status === "disconnecting"
-              ? "Disconnecting..."
+              ? "Ending session..."
               : "SwarmCast Collective"}
           </span>
         </div>
@@ -253,55 +279,51 @@ export function SwarmChat({ analysisId, agentId, title }: SwarmChatProps) {
         {status === "connected" && messages.length === 0 && !loadingUrl && (
           <div className="flex items-center justify-center h-full">
             <p className="text-xs text-muted-foreground text-center leading-relaxed">
-              The swarm is ready. Hold the button below and ask about "{title}"
+              The swarm is ready. Click the mic to speak.
               <br />
-              <em className="opacity-60">e.g. "Which persona worried most?" or "Why might this go viral?"</em>
+              <em className="opacity-60">Try: "Talk to the most opposing voice" or "Who would go viral?"</em>
             </p>
           </div>
         )}
       </div>
 
-      {/* Push-to-talk bar */}
+      {/* Controls bar */}
       {status === "connected" && (
         <div className="px-4 py-3 border-t border-border/40 flex items-center gap-3">
           <button
-            onMouseDown={pttStart}
-            onMouseUp={pttEnd}
-            onMouseLeave={pttEnd}
-            onTouchStart={(e) => { e.preventDefault(); pttStart(); }}
-            onTouchEnd={(e) => { e.preventDefault(); pttEnd(); }}
-            disabled={isAiSpeaking}
+            onClick={toggleMic}
             className={cn(
               "flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg border font-medium text-sm transition-all select-none",
-              isPttActive
-                ? "bg-positive/15 border-positive/50 text-positive scale-[0.98]"
+              micOpen
+                ? "bg-positive/15 border-positive/50 text-positive"
                 : isAiSpeaking
-                ? "bg-muted/40 border-border/30 text-muted-foreground/50 cursor-not-allowed"
-                : "bg-primary/8 border-primary/30 text-primary hover:bg-primary/12 hover:border-primary/50 active:scale-[0.98]",
+                ? "bg-primary/8 border-primary/30 text-primary/70 hover:bg-primary/12"
+                : "bg-primary/8 border-primary/30 text-primary hover:bg-primary/12 hover:border-primary/50",
             )}
           >
-            {isPttActive ? (
+            {micOpen ? (
               <>
                 <Mic className="w-4 h-4 animate-pulse" />
-                Listening — release to stop
+                Mic on — click to stop
               </>
             ) : isAiSpeaking ? (
               <>
-                <Radio className="w-4 h-4 animate-pulse" />
-                Swarm is speaking...
+                <Volume2 className="w-4 h-4 animate-pulse" />
+                Click to interrupt
               </>
             ) : (
               <>
                 <MicOff className="w-4 h-4" />
-                Hold to speak
+                Click to speak
               </>
             )}
           </button>
           <button
             onClick={endSession}
-            className="text-[10px] font-mono text-muted-foreground hover:text-negative transition-colors whitespace-nowrap"
+            title="End session"
+            className="flex items-center justify-center w-9 h-9 rounded-lg border border-negative/20 text-negative/60 hover:bg-negative/10 hover:border-negative/40 hover:text-negative transition-all"
           >
-            End session
+            <PhoneOff className="w-4 h-4" />
           </button>
         </div>
       )}

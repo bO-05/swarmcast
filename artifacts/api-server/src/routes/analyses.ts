@@ -28,7 +28,7 @@ router.post("/analyses", async (req: Request, res: Response) => {
       logger.error({ err, analysisId: analysis.id }, "Pipeline error");
     });
 
-    res.status(201).json({ id: analysis.id, status: analysis.status });
+    res.status(201).json({ id: analysis.id, status: "processing" });
   } catch (err) {
     logger.error({ err }, "Failed to create analysis");
     res.status(500).json({ error: "Failed to create analysis" });
@@ -114,20 +114,26 @@ router.get("/analyses/:id/stream", (req: Request, res: Response) => {
   });
 });
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 router.get("/static/audio/:analysisId/:file", (req: Request, res: Response) => {
   const { analysisId, file } = req.params as {
     analysisId: string;
     file: string;
   };
 
-  const safeFile = path.basename(file);
-  const filePath = path.join(
-    process.cwd(),
-    "static",
-    "audio",
-    analysisId,
-    safeFile,
-  );
+  if (!UUID_RE.test(analysisId)) {
+    res.status(400).json({ error: "Invalid analysisId" });
+    return;
+  }
+
+  const audioRoot = path.resolve(process.cwd(), "static", "audio", analysisId);
+  const filePath = path.resolve(audioRoot, path.basename(file));
+
+  if (!filePath.startsWith(audioRoot + path.sep)) {
+    res.status(400).json({ error: "Invalid file path" });
+    return;
+  }
 
   if (!fs.existsSync(filePath)) {
     res.status(404).json({ error: "Audio file not found" });

@@ -22,11 +22,15 @@ interface SwarmChatProps {
 type ConvStatus = "idle" | "connecting" | "connected" | "disconnecting";
 
 const PERSONA_TAG = /^<<PERSONA:([^>]+)>>/;
-
-const PERSONA_TRIGGER = /\b(talk|speak|hear|connect|channel|put me through|switch|let me talk|i wanna|call)\b.{0,50}\b(persona|voice|most|oldest|youngest|opposing|critical|negative|skeptic|positive|supportive|influential|agree|disagree|different|other)/i;
+const PERSONA_TRIGGER = /\b(talk|speak|hear|connect|channel|put me through|let me talk|i wanna|call)\b.{0,50}\b(persona|voice|most|oldest|youngest|opposing|critical|negative|skeptic|positive|supportive|influential|agree|disagree|different|other)/i;
 
 function normalizeName(n: string) {
   return n.trim().toLowerCase();
+}
+
+function killAudio(conv: Conversation) {
+  try { (conv as unknown as Record<string, () => void>).fadeOutAudio?.(); } catch { /* private method, best-effort */ }
+  conv.sendUserActivity();
 }
 
 export function SwarmChat({ analysisId, agentId, title, personas = [] }: SwarmChatProps) {
@@ -46,6 +50,7 @@ export function SwarmChat({ analysisId, agentId, title, personas = [] }: SwarmCh
   const pendingPersonaModeRef = useRef(false);
   const activePersonaRef = useRef<string | null>(null);
   const personaAudioRef = useRef<HTMLAudioElement | null>(null);
+  const userEndedRef = useRef(false);
 
   const { data: signedUrlData, isLoading: loadingUrl, isError: urlError } =
     useGetSwarmSignedUrl(analysisId);
@@ -60,7 +65,7 @@ export function SwarmChat({ analysisId, agentId, title, personas = [] }: SwarmCh
   signedUrlRef.current = signedUrlData?.signedUrl;
 
   useEffect(() => {
-    if (!open || status !== "idle") return;
+    if (!open || status !== "idle" || userEndedRef.current) return;
     if (urlError) {
       setError("Could not reach the swarm agent. The agent may not be ready yet.");
       return;
@@ -75,7 +80,7 @@ export function SwarmChat({ analysisId, agentId, title, personas = [] }: SwarmCh
       stopPersonaAudio();
       const conv = conversationRef.current;
       if (conv) {
-        conv.setVolume({ volume: 0 });
+        killAudio(conv);
         conv.endSession().catch(() => null);
         conversationRef.current = null;
       }
@@ -93,48 +98,36 @@ export function SwarmChat({ analysisId, agentId, title, personas = [] }: SwarmCh
 
   function findPersonaVoice(name: string): string | null {
     const norm = normalizeName(name);
-    const match = personas.find(p => normalizeName(p.personaName) === norm);
-    return match?.voiceId ?? null;
+    return personas.find(p => normalizeName(p.personaName) === norm)?.voiceId ?? null;
   }
 
-  async function playPersonaVoice(text: string, voiceId: string, personaName: string) {
+  async function playPersonaVoice(text: string, voiceId: string) {
     stopPersonaAudio();
-    conversationRef.current?.setVolume({ volume: 0 });
-
     try {
       const res = await fetch(`/api/analyses/${analysisId}/persona-speak`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text, voiceId }),
       });
-
       if (!res.ok || !res.body) return;
-
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
       personaAudioRef.current = audio;
-
       setPersonaAudioPlaying(true);
       audio.onended = () => {
         URL.revokeObjectURL(url);
         personaAudioRef.current = null;
         setPersonaAudioPlaying(false);
-        if (!micOpenRef.current) {
-          conversationRef.current?.setVolume({ volume: 1 });
-        }
       };
       audio.onerror = () => {
         URL.revokeObjectURL(url);
         personaAudioRef.current = null;
         setPersonaAudioPlaying(false);
-        conversationRef.current?.setVolume({ volume: 1 });
       };
-
       await audio.play();
     } catch {
       setPersonaAudioPlaying(false);
-      conversationRef.current?.setVolume({ volume: 1 });
     }
   }
 
@@ -166,7 +159,8 @@ export function SwarmChat({ analysisId, agentId, title, personas = [] }: SwarmCh
           if (source === "user") {
             if (PERSONA_TRIGGER.test(message)) {
               pendingPersonaModeRef.current = true;
-              conversationRef.current?.setVolume({ volume: 0 });
+              const conv = conversationRef.current;
+              if (conv) killAudio(conv);
             }
             setMessages(prev => [...prev, { source, message, id: ++msgIdRef.current }]);
             return;
@@ -179,23 +173,18 @@ export function SwarmChat({ analysisId, agentId, title, personas = [] }: SwarmCh
             activePersonaRef.current = personaName;
             setActivePersona(personaName);
             pendingPersonaModeRef.current = false;
-
+            const conv = conversationRef.current;
+            if (conv) killAudio(conv);
             setMessages(prev => [
               ...prev,
               { source: "ai", message: speech, id: ++msgIdRef.current, personaName },
             ]);
-
             const voiceId = findPersonaVoice(personaName);
-            if (voiceId && speech) {
-              playPersonaVoice(speech, voiceId, personaName);
-            } else {
-              conversationRef.current?.setVolume({ volume: 1 });
-            }
+            if (voiceId && speech) playPersonaVoice(speech, voiceId);
           } else {
             activePersonaRef.current = null;
             setActivePersona(null);
             pendingPersonaModeRef.current = false;
-            conversationRef.current?.setVolume({ volume: 1 });
             setMessages(prev => [...prev, { source: "ai", message, id: ++msgIdRef.current }]);
           }
         },
@@ -207,15 +196,10 @@ export function SwarmChat({ analysisId, agentId, title, personas = [] }: SwarmCh
         },
         onModeChange: ({ mode: m }) => {
           setMode(m);
-          if (m === "speaking") {
-            if (!activePersonaRef.current && !pendingPersonaModeRef.current) {
-              conversationRef.current?.setVolume({ volume: 1 });
-            }
-            if (micOpenRef.current) {
-              conversationRef.current?.setMicMuted(true);
-              micOpenRef.current = false;
-              setMicOpen(false);
-            }
+          if (m === "speaking" && micOpenRef.current) {
+            conversationRef.current?.setMicMuted(true);
+            micOpenRef.current = false;
+            setMicOpen(false);
           }
         },
         onStatusChange: ({ status: s }) => {
@@ -225,7 +209,6 @@ export function SwarmChat({ analysisId, agentId, title, personas = [] }: SwarmCh
 
       conversationRef.current = conversation;
       conversation.setMicMuted(true);
-      conversation.setVolume({ volume: 1 });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to start conversation");
       setStatus("idle");
@@ -233,52 +216,46 @@ export function SwarmChat({ analysisId, agentId, title, personas = [] }: SwarmCh
   }
 
   const endSession = useCallback(() => {
+    userEndedRef.current = true;
     stopPersonaAudio();
     const conv = conversationRef.current;
-    if (!conv) { setStatus("idle"); return; }
-    conv.setVolume({ volume: 0 });
-    conversationRef.current = null;
+    if (conv) {
+      killAudio(conv);
+      conversationRef.current = null;
+      conv.endSession().catch(() => null);
+    }
     setMicOpen(false);
     micOpenRef.current = false;
     setActivePersona(null);
-    setStatus("disconnecting");
-    conv.endSession().catch(() => null).finally(() => setStatus("idle"));
+    setStatus("idle");
+    setOpen(false);
   }, []);
 
   const toggleMic = useCallback(() => {
     const conv = conversationRef.current;
     if (!conv || status !== "connected") return;
-
     if (micOpenRef.current) {
       conv.setMicMuted(true);
       micOpenRef.current = false;
       setMicOpen(false);
-      if (!personaAudioRef.current) {
-        conv.setVolume({ volume: 1 });
-      }
     } else {
       stopPersonaAudio();
-      conv.setVolume({ volume: 0 });
+      killAudio(conv);
       conv.setMicMuted(false);
       micOpenRef.current = true;
       setMicOpen(true);
     }
   }, [status]);
 
-  const interrupt = useCallback(() => {
+  const stopAI = useCallback(() => {
     const conv = conversationRef.current;
     if (!conv || status !== "connected") return;
     stopPersonaAudio();
-    conv.setVolume({ volume: 0 });
-    conv.setMicMuted(false);
-    micOpenRef.current = true;
-    setMicOpen(true);
-    activePersonaRef.current = null;
-    setActivePersona(null);
-    pendingPersonaModeRef.current = false;
+    killAudio(conv);
   }, [status]);
 
   function handleOpen() {
+    userEndedRef.current = false;
     setOpen(true);
     setStatus("idle");
     setMessages([]);
@@ -289,12 +266,11 @@ export function SwarmChat({ analysisId, agentId, title, personas = [] }: SwarmCh
   }
 
   function handleClose() {
-    if (status === "connected" || status === "connecting") endSession();
-    setOpen(false);
-    setStatus("idle");
+    endSession();
   }
 
   const isAiSpeaking = status === "connected" && mode === "speaking" && !micOpen;
+  const anythingPlaying = isAiSpeaking || personaAudioPlaying;
 
   if (!open) {
     return (
@@ -317,42 +293,28 @@ export function SwarmChat({ analysisId, agentId, title, personas = [] }: SwarmCh
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border/40 bg-card/60">
         <div className="flex items-center gap-2 min-w-0">
-          <div
-            className={cn(
-              "w-2 h-2 shrink-0 rounded-full transition-colors",
-              personaAudioPlaying
-                ? "bg-amber-400 animate-pulse"
-                : isAiSpeaking
-                ? "bg-primary animate-pulse"
-                : micOpen
-                ? "bg-positive animate-pulse"
-                : status === "connected"
-                ? "bg-positive"
-                : status === "connecting"
-                ? "bg-amber-400 animate-pulse"
-                : "bg-border",
-            )}
-          />
+          <div className={cn(
+            "w-2 h-2 shrink-0 rounded-full transition-colors",
+            personaAudioPlaying ? "bg-amber-400 animate-pulse"
+              : isAiSpeaking ? "bg-primary animate-pulse"
+              : micOpen ? "bg-positive animate-pulse"
+              : status === "connected" ? "bg-positive"
+              : status === "connecting" ? "bg-amber-400 animate-pulse"
+              : "bg-border",
+          )} />
           <span className="text-xs font-mono text-muted-foreground truncate">
-            {status === "connecting"
-              ? "Connecting to swarm..."
-              : personaAudioPlaying
-              ? `🎭 ${activePersona} is speaking...`
-              : micOpen
-              ? "Mic open — swarm listening"
-              : activePersona
-              ? `Channelling ${activePersona}`
-              : isAiSpeaking
-              ? "Swarm collective speaking..."
-              : status === "connected"
-              ? "SwarmCast Collective — ready"
-              : status === "disconnecting"
-              ? "Ending session..."
+            {status === "connecting" ? "Connecting to swarm..."
+              : personaAudioPlaying ? `🎭 ${activePersona} speaking...`
+              : micOpen ? "Listening to you..."
+              : activePersona ? `Channelling ${activePersona}`
+              : isAiSpeaking ? "Swarm speaking..."
+              : status === "connected" ? "SwarmCast Collective"
               : "SwarmCast Collective"}
           </span>
         </div>
         <button
           onClick={handleClose}
+          title="End session"
           className="ml-2 shrink-0 flex items-center justify-center w-7 h-7 rounded-full border border-border/40 text-muted-foreground hover:border-border hover:text-foreground transition-all"
         >
           <X className="w-3.5 h-3.5" />
@@ -369,13 +331,11 @@ export function SwarmChat({ analysisId, agentId, title, personas = [] }: SwarmCh
             </div>
           </div>
         )}
-
         {error && (
           <div className="p-3 rounded-md bg-negative/10 border border-negative/20 text-sm text-negative">
             {error}
           </div>
         )}
-
         <AnimatePresence>
           {messages.map((msg) => (
             <motion.div
@@ -384,24 +344,20 @@ export function SwarmChat({ analysisId, agentId, title, personas = [] }: SwarmCh
               animate={{ opacity: 1, y: 0 }}
               className={cn("flex", msg.source === "user" ? "justify-end" : "justify-start")}
             >
-              <div
-                className={cn(
-                  "max-w-[85%] px-3 py-2 rounded-xl text-sm leading-relaxed",
-                  msg.source === "user"
-                    ? "bg-primary text-primary-foreground rounded-br-sm"
-                    : msg.personaName
-                    ? "bg-amber-500/10 text-foreground rounded-bl-sm border border-amber-500/20"
-                    : "bg-muted text-foreground rounded-bl-sm border border-border/30",
-                )}
-              >
+              <div className={cn(
+                "max-w-[85%] px-3 py-2 rounded-xl text-sm leading-relaxed",
+                msg.source === "user"
+                  ? "bg-primary text-primary-foreground rounded-br-sm"
+                  : msg.personaName
+                  ? "bg-amber-500/10 text-foreground rounded-bl-sm border border-amber-500/20"
+                  : "bg-muted text-foreground rounded-bl-sm border border-border/30",
+              )}>
                 {msg.source === "ai" && (
                   <div className="flex items-center gap-1 mb-1">
                     {msg.personaName ? (
-                      <>
-                        <span className="text-[9px] font-mono text-amber-400/80 uppercase tracking-widest">
-                          🎭 {msg.personaName}
-                        </span>
-                      </>
+                      <span className="text-[9px] font-mono text-amber-400/80 uppercase tracking-widest">
+                        🎭 {msg.personaName}
+                      </span>
                     ) : (
                       <>
                         <Radio className="w-2.5 h-2.5 text-primary" />
@@ -417,22 +373,22 @@ export function SwarmChat({ analysisId, agentId, title, personas = [] }: SwarmCh
             </motion.div>
           ))}
         </AnimatePresence>
-
         {status === "connected" && messages.length === 0 && !loadingUrl && (
           <div className="flex items-center justify-center h-full">
             <p className="text-xs text-muted-foreground text-center leading-relaxed">
               The swarm is ready. Click <strong>Speak</strong> to talk.
               <br />
-              <em className="opacity-60">Try: "Talk to the most opposing voice" or "Who's the oldest skeptic?"</em>
+              <em className="opacity-60">Try: "Talk to the most opposing voice"</em>
             </p>
           </div>
         )}
       </div>
 
-      {/* Controls — three dedicated buttons */}
+      {/* Three separate buttons — each has one job, always visible */}
       {status === "connected" && (
         <div className="px-4 py-3 border-t border-border/40 flex items-center gap-2">
-          {/* Speak toggle */}
+
+          {/* 1. Speak — toggle mic */}
           <button
             onClick={toggleMic}
             title={micOpen ? "Close mic" : "Open mic and speak"}
@@ -443,32 +399,31 @@ export function SwarmChat({ analysisId, agentId, title, personas = [] }: SwarmCh
                 : "bg-primary/8 border-primary/30 text-primary hover:bg-primary/12 hover:border-primary/50",
             )}
           >
-            {micOpen ? (
-              <><Mic className="w-4 h-4 animate-pulse" />Speaking</>
-            ) : (
-              <><MicOff className="w-4 h-4" />Speak</>
-            )}
+            {micOpen
+              ? <><Mic className="w-4 h-4 animate-pulse" />Speaking</>
+              : <><MicOff className="w-4 h-4" />Speak</>
+            }
           </button>
 
-          {/* Interrupt — always visible, silences AI + opens mic */}
+          {/* 2. Stop — instantly kill AI audio, keep session */}
           <button
-            onClick={interrupt}
-            title="Instantly stop AI and take the floor"
+            onClick={stopAI}
+            title="Stop AI audio immediately"
             className={cn(
-              "flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg border text-sm font-medium transition-all select-none",
-              (isAiSpeaking || personaAudioPlaying)
-                ? "bg-amber-500/15 border-amber-500/50 text-amber-400 hover:bg-amber-500/20"
-                : "bg-muted/40 border-border/30 text-muted-foreground/60 hover:text-muted-foreground hover:border-border/50",
+              "flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg border text-sm font-medium transition-all select-none",
+              anythingPlaying
+                ? "bg-negative/10 border-negative/40 text-negative hover:bg-negative/15"
+                : "bg-muted/40 border-border/30 text-muted-foreground/50 hover:text-muted-foreground hover:border-border/50",
             )}
           >
             <Square className="w-3.5 h-3.5" />
             Stop
           </button>
 
-          {/* End session */}
+          {/* 3. End session — closes the panel */}
           <button
             onClick={endSession}
-            title="End session"
+            title="End session and close"
             className="flex items-center justify-center w-9 h-9 rounded-lg border border-negative/20 text-negative/50 hover:bg-negative/10 hover:border-negative/40 hover:text-negative transition-all"
           >
             <PhoneOff className="w-4 h-4" />

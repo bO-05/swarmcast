@@ -1,3 +1,4 @@
+import type { ElementType } from "react";
 import { PipelineState } from "@/hooks/use-sse-pipeline";
 import { motion } from "framer-motion";
 import { CheckCircle2, Circle, Loader2, FileText, Search, ShieldCheck, Users, Mic, AudioLines, Radio } from "lucide-react";
@@ -7,14 +8,14 @@ interface PipelineFeedProps {
   analysisId: string;
 }
 
-const steps = [
+const steps: Array<{ id: string; label: string; icon: ElementType; showProgress?: boolean }> = [
   { id: "extracting", label: "Extracting topics with Mistral", icon: FileText },
-  { id: "searching", label: "Searching web with Exa", icon: Search },
-  { id: "fact_checking", label: "Fact-checking with Perplexity", icon: ShieldCheck },
+  { id: "searching", label: "Searching web & fact-checking with Perplexity", icon: Search },
   { id: "generating_personas", label: "Generating 25 personas with Mistral", icon: Users },
-  { id: "designing_voices", label: "Designing 25 unique voices with ElevenLabs", icon: Mic, showProgress: true },
+  { id: "designing_voices", label: "Designing unique voices with ElevenLabs", icon: Mic, showProgress: true },
   { id: "generating_audio", label: "Generating audio clips", icon: AudioLines, showProgress: true },
   { id: "building_montage", label: "Building Focus Group Podcast", icon: Radio },
+  { id: "summarizing", label: "Generating swarm summary & forecast", icon: ShieldCheck },
 ];
 
 export function PipelineFeed({ state, analysisId }: PipelineFeedProps) {

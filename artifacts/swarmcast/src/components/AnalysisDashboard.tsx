@@ -13,9 +13,10 @@ import { useState } from "react";
 interface AnalysisDashboardProps {
   analysis: FullAnalysis;
   onSelectHistory: (id: string) => void;
+  autoPlayMontage?: boolean;
 }
 
-export function AnalysisDashboard({ analysis, onSelectHistory }: AnalysisDashboardProps) {
+export function AnalysisDashboard({ analysis, onSelectHistory, autoPlayMontage = false }: AnalysisDashboardProps) {
   const {
     title,
     avgSentiment = 0,
@@ -31,6 +32,9 @@ export function AnalysisDashboard({ analysis, onSelectHistory }: AnalysisDashboa
     personas = [],
     forecastPoints = []
   } = analysis;
+
+  const viralPct = Math.round((viralPotential ?? 0) * 100);
+  const marketPct = Math.round((marketProbability ?? 0) * 100);
 
   const [activeAudioId, setActiveAudioId] = useState<number | null>(null);
 
@@ -68,7 +72,7 @@ export function AnalysisDashboard({ analysis, onSelectHistory }: AnalysisDashboa
                   <div className="flex-1 text-center md:text-left">
                     <h2 className="text-2xl font-bold mb-2">Focus Group Podcast</h2>
                     <p className="text-muted-foreground mb-6">Listen to the synthesized reaction of 25 AI personas discussing your announcement.</p>
-                    <AudioPlayer src={montageUrl} className="max-w-md w-full bg-background/80" />
+                    <AudioPlayer src={montageUrl} autoPlay={autoPlayMontage} className="max-w-md w-full bg-background/80" />
                   </div>
                 </div>
               </CardContent>
@@ -117,9 +121,9 @@ export function AnalysisDashboard({ analysis, onSelectHistory }: AnalysisDashboa
             </CardHeader>
             <CardContent className="py-6">
               <div className="text-4xl font-bold mb-4 text-center">
-                {viralPotential}%
+                {viralPct}%
               </div>
-              <Progress value={viralPotential} className="h-2" />
+              <Progress value={viralPct} className="h-2" />
             </CardContent>
           </Card>
         </div>
@@ -150,9 +154,9 @@ export function AnalysisDashboard({ analysis, onSelectHistory }: AnalysisDashboa
                 <div className="flex-1">
                   <div className="flex justify-between text-sm mb-2">
                     <span className="text-muted-foreground">No</span>
-                    <span className="font-mono text-primary font-bold">{marketProbability}% Yes</span>
+                    <span className="font-mono text-primary font-bold">{marketPct}% Yes</span>
                   </div>
-                  <Progress value={marketProbability || 0} className="h-3" />
+                  <Progress value={marketPct} className="h-3" />
                 </div>
               </div>
             </CardContent>

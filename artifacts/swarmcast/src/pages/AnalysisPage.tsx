@@ -4,7 +4,7 @@ import { AnalysisDashboard } from "@/components/AnalysisDashboard";
 import { PipelineFeed } from "@/components/PipelineFeed";
 import { useSsePipeline } from "@/hooks/use-sse-pipeline";
 import { Share2, Check } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 export default function AnalysisPage() {
   const { id } = useParams<{ id: string }>();
@@ -13,21 +13,37 @@ export default function AnalysisPage() {
 
   const isNewSession = typeof sessionStorage !== "undefined" && sessionStorage.getItem(`new:${id}`) === "1";
 
-  const pipelineState = useSsePipeline(isNewSession ? id : null);
+  // Always fetch the analysis — we need its status to decide whether SSE is needed
+  const { data: fullAnalysis, isLoading } = useGetAnalysis(id, {
+    query: {
+      enabled: !!id,
+      queryKey: getGetAnalysisQueryKey(id),
+      refetchInterval: (data) => {
+        const s = (data as { status?: string } | undefined)?.status;
+        return s === "complete" || s === "failed" ? false : 3000;
+      },
+      refetchIntervalInBackground: false,
+    },
+  });
+
+  // Only open SSE when this is a new session AND the analysis is not yet complete
+  const alreadyComplete = fullAnalysis?.status === "complete";
+  const useSse = isNewSession && !alreadyComplete;
+
+  const pipelineState = useSsePipeline(useSse ? id : null);
+
   const isPipelineActive =
-    isNewSession &&
+    useSse &&
     pipelineState.status !== "idle" &&
     pipelineState.status !== "complete" &&
     pipelineState.status !== "error";
 
-  const { data: fullAnalysis, isLoading } = useGetAnalysis(id, {
-    query: {
-      enabled: !!id && !isPipelineActive,
-      queryKey: getGetAnalysisQueryKey(id),
-      refetchInterval: 3000,
-      refetchIntervalInBackground: false,
-    },
-  });
+  // Clear the new-session marker once the pipeline finishes so future visits go straight to the dashboard
+  useEffect(() => {
+    if (pipelineState.status === "complete" && id) {
+      sessionStorage.removeItem(`new:${id}`);
+    }
+  }, [pipelineState.status, id]);
 
   const handleSelectHistory = (newId: string) => {
     navigate(`/analysis/${newId}`);

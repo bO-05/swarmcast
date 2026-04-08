@@ -520,6 +520,65 @@ export async function generateNarratorIntro(
   }
 }
 
+export async function generateMontageTheme(
+  avgSentiment: number,
+  riskLevel: string,
+  viralPotential: number,
+  analysisId: string,
+): Promise<{ audioUrl: string; audioPath: string } | null> {
+  const apiKey = getApiKey();
+
+  const risk = (riskLevel || "medium").toLowerCase();
+  const viral = viralPotential ?? 0;
+  const sentiment = avgSentiment ?? 0;
+
+  let prompt: string;
+  let durationSec = 6;
+
+  if (sentiment > 0.4 && viral > 0.6) {
+    prompt = "Upbeat energetic ambient electronic music with optimistic rising synths and subtle percussive beats, broadcast intro style";
+  } else if (sentiment < -0.3 || risk === "high") {
+    prompt = "Tense cinematic orchestral underscore with low drones and subtle tension, documentary news investigation style";
+  } else if (viral > 0.5) {
+    prompt = "Dynamic modern ambient music with pulsing electronic elements and forward momentum, viral content energy";
+  } else if (sentiment > 0.1) {
+    prompt = "Calm optimistic ambient instrumental with soft piano and gentle strings, thoughtful podcast intro style";
+  } else {
+    prompt = "Contemplative neutral ambient soundscape with soft texture, analytical documentary background mood";
+  }
+
+  try {
+    const response = await fetch(`${ELEVENLABS_API_URL}/v1/sound-generation`, {
+      method: "POST",
+      headers: {
+        Accept: "audio/mpeg",
+        "Content-Type": "application/json",
+        "xi-api-key": apiKey,
+      },
+      body: JSON.stringify({
+        text: prompt,
+        duration_seconds: durationSec,
+        prompt_influence: 0.4,
+      }),
+    });
+
+    if (!response.ok) return null;
+
+    const audioBuffer = Buffer.from(await response.arrayBuffer());
+    const dir = path.join(process.cwd(), "static", "audio", analysisId);
+    fs.mkdirSync(dir, { recursive: true });
+    const filePath = path.join(dir, "montage_theme.mp3");
+    fs.writeFileSync(filePath, audioBuffer);
+
+    return {
+      audioUrl: `/api/static/audio/${analysisId}/montage_theme.mp3`,
+      audioPath: filePath,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function createSwarmAgent(
   analysisId: string,
   title: string,
@@ -530,28 +589,69 @@ export async function createSwarmAgent(
     country: string;
     finalSentiment: number;
     keyConcern: string;
+    wouldShare: boolean;
+    reaction: string;
   }>,
+  context: {
+    keyThemes: string[];
+    narrativeFractures: string[];
+    contentSuggestions: string[];
+    factCheckSummary: string;
+    riskLevel: string;
+    viralPotential: number;
+    avgSentiment: number;
+  },
 ): Promise<string | null> {
   const apiKey = getApiKey();
 
   const personaList = personas
-    .slice(0, 10)
     .map(
       (p) =>
-        `- ${p.name} (${p.type}, ${p.country}): sentiment ${p.finalSentiment.toFixed(2)}, concern: ${p.keyConcern}`,
+        `- ${p.name} (${p.type}, ${p.country}): sentiment ${p.finalSentiment.toFixed(2)}, would share: ${p.wouldShare ? "yes" : "no"}, concern: ${p.keyConcern}. Reaction: "${p.reaction}"`,
     )
     .join("\n");
 
-  const systemPrompt = `You are the SwarmCast Collective — a meta-intelligence representing 25 diverse AI personas who have just analyzed content titled: "${title}".
+  const themesList = context.keyThemes.length > 0
+    ? `Key themes: ${context.keyThemes.join(", ")}`
+    : "";
 
-Swarm Analysis: ${swarmSummary}
+  const fracturesList = context.narrativeFractures.length > 0
+    ? `Narrative fractures:\n${context.narrativeFractures.map(f => `  • ${f}`).join("\n")}`
+    : "";
 
-Key Personas in Your Collective:
+  const suggestionsList = context.contentSuggestions.length > 0
+    ? `Prescriptive improvements the swarm recommends:\n${context.contentSuggestions.map((s, i) => `  ${i + 1}. ${s}`).join("\n")}`
+    : "";
+
+  const sharingCount = personas.filter(p => p.wouldShare).length;
+  const sharingPct = personas.length > 0 ? Math.round((sharingCount / personas.length) * 100) : 0;
+
+  const systemPrompt = `You are the SwarmCast Collective — a meta-intelligence representing ${personas.length} diverse AI personas who have analysed content titled: "${title}".
+
+## Swarm Summary
+${swarmSummary}
+
+## Sentiment Metrics
+- Average sentiment: ${context.avgSentiment.toFixed(2)} (range -1 to 1)
+- Risk level: ${context.riskLevel}
+- Viral potential: ${Math.round(context.viralPotential * 100)}%
+- Would share: ${sharingPct}% (${sharingCount}/${personas.length} personas)
+
+${themesList}
+
+${fracturesList}
+
+${context.factCheckSummary ? `## Fact-Check\n${context.factCheckSummary}` : ""}
+
+${suggestionsList}
+
+## All ${personas.length} Persona Stances
 ${personaList}
 
-When answering questions, draw on specific persona perspectives using their names. Reference sentiment scores and concerns authentically. Present the full spectrum of views. Be direct, insightful, and analytically honest. Keep responses conversational and under 150 words.`;
+## Instructions
+When answering questions, draw on specific persona perspectives by name. Reference sentiment scores and concerns authentically. Present the full spectrum of views — both supportive and critical. If asked about improvements, share the prescriptive suggestions. Be direct, insightful, and analytically honest. Keep responses conversational and under 200 words.`;
 
-  const firstMessage = `Hello! I'm the SwarmCast Collective — 25 voices who just analyzed "${title}". ${(swarmSummary ?? "").slice(0, 100)}... Ask me anything about how different communities might respond to this content.`;
+  const firstMessage = `Hello! I'm the SwarmCast Collective — ${personas.length} voices who just analysed "${title}". ${(swarmSummary ?? "").slice(0, 120)}... What would you like to know about how the public might respond?`;
 
   try {
     const res = await fetch(`${ELEVENLABS_API_URL}/v1/convai/agents/create`, {

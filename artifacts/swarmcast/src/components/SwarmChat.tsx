@@ -30,9 +30,7 @@ export function SwarmChat({ analysisId, agentId, title }: SwarmChatProps) {
   const msgIdRef = useRef(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const { data: signedUrlData, isLoading: loadingUrl } = useGetSwarmSignedUrl(analysisId, {
-    query: { enabled: open && status === "idle" } as never,
-  });
+  const { data: signedUrlData, isLoading: loadingUrl } = useGetSwarmSignedUrl(analysisId);
 
   useEffect(() => {
     if (messagesEndRef.current) {
@@ -40,11 +38,15 @@ export function SwarmChat({ analysisId, agentId, title }: SwarmChatProps) {
     }
   }, [messages]);
 
-  useEffect(() => {
-    if (!open || !signedUrlData?.signedUrl || status !== "idle") return;
+  const signedUrlRef = useRef<string | undefined>(undefined);
+  signedUrlRef.current = signedUrlData?.signedUrl;
 
-    startSession(signedUrlData.signedUrl);
-  }, [open, signedUrlData, status]);
+  useEffect(() => {
+    if (!open || status !== "idle") return;
+    const url = signedUrlRef.current;
+    if (!url) return;
+    startSession(url);
+  }, [open, signedUrlData?.signedUrl, status]);
 
   useEffect(() => {
     return () => {

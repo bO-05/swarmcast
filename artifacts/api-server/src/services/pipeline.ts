@@ -16,6 +16,7 @@ import {
   generateNarratorIntro,
   getAlignmentData,
   createSwarmAgent,
+  generateMontageTheme,
 } from "./elevenlabs";
 import { buildMontage, getAudioDurationSec } from "./montage";
 import { buildForecast } from "./forecast";
@@ -469,6 +470,13 @@ export async function runPipeline(
       })
       .where(eq(analysesTable.id, analysisId));
 
+    generateMontageTheme(
+      swarmRaw.avg_sentiment ?? 0,
+      swarmRaw.risk_level ?? "medium",
+      swarmRaw.viral_potential ?? 0,
+      analysisId,
+    ).catch((err) => logger.error({ err }, "Montage theme generation failed"));
+
     sseBroker.emit(analysisId, {
       type: "status",
       message: "Creating SwarmCast ConvAI agent...",
@@ -478,13 +486,24 @@ export async function runPipeline(
       analysisId,
       title,
       swarmRaw.swarm_summary_paragraph,
-      finalPersonas.slice(0, 10).map((p) => ({
+      finalPersonas.map((p) => ({
         name: p.personaName ?? "Unknown",
         type: p.personaType ?? "neutral",
         country: p.country ?? "Unknown",
         finalSentiment: p.finalSentiment ?? 0,
         keyConcern: p.keyConcern ?? "",
+        wouldShare: p.wouldShare ?? false,
+        reaction: p.initialReaction ?? "",
       })),
+      {
+        keyThemes: (swarmRaw.key_themes ?? []) as string[],
+        narrativeFractures: (swarmRaw.narrative_fractures ?? []) as string[],
+        contentSuggestions: (swarmRaw.content_suggestions ?? []) as string[],
+        factCheckSummary: fact?.objectiveAssessment ?? "",
+        riskLevel: swarmRaw.risk_level ?? "medium",
+        viralPotential: swarmRaw.viral_potential ?? 0,
+        avgSentiment: swarmRaw.avg_sentiment ?? 0,
+      },
     ).catch((err) => {
       logger.error({ err }, "Agent creation failed");
       return null;

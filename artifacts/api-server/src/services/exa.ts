@@ -6,43 +6,31 @@ export interface ExaResult {
 }
 
 export async function fetchUrlContent(url: string): Promise<{ title: string; text: string; publishedDate?: string }> {
-  const apiKey = process.env["EXA_API_KEY"];
-  if (!apiKey) throw new Error("EXA_API_KEY is not set");
+  // Strip protocol then prepend Jina Reader prefix for reliable content extraction
+  const stripped = url.replace(/^https?:\/\//, "");
+  const jinaUrl = `https://r.jina.ai/${stripped}`;
 
-  const response = await fetch("https://api.exa.ai/contents", {
-    method: "POST",
+  const response = await fetch(jinaUrl, {
     headers: {
-      "x-api-key": apiKey,
-      "Content-Type": "application/json",
+      Accept: "text/plain",
     },
-    body: JSON.stringify({
-      ids: [url],
-      text: { maxCharacters: 8000 },
-    }),
   });
 
   if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`Exa contents error: ${response.status} - ${errText}`);
+    throw new Error(`Jina Reader error: ${response.status} - ${response.statusText}`);
   }
 
-  const data = (await response.json()) as {
-    results: Array<{
-      title?: string;
-      url: string;
-      text?: string;
-      publishedDate?: string;
-    }>;
-  };
+  const text = await response.text();
+  if (!text || text.trim().length === 0) throw new Error("No content extracted from URL");
 
-  const result = data.results?.[0];
-  if (!result?.text) throw new Error("No content extracted from URL");
+  // Jina returns markdown — extract the title from the first heading if present
+  const titleMatch = text.match(/^Title:\s*(.+)$/m) ?? text.match(/^#\s+(.+)$/m);
+  const title = titleMatch ? titleMatch[1].trim() : new URL(url).hostname;
 
-  return {
-    title: result.title || new URL(url).hostname,
-    text: result.text,
-    publishedDate: result.publishedDate,
-  };
+  // Trim to ~8000 chars to stay within LLM context
+  const trimmedText = text.length > 8000 ? text.slice(0, 8000) + "…" : text;
+
+  return { title, text: trimmedText };
 }
 
 export async function searchDiscourse(keywords: string): Promise<ExaResult[]> {
